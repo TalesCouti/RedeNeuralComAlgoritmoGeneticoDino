@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dino Runner IA</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="hud" aria-label="Painel do jogo">
+        <div>
+          <p class="eyebrow">Projeto de algoritmo genetico</p>
+          <h1>Dino Runner IA</h1>
+        </div>
+
+        <div class="stats">
+          <div>
+            <span>Pontos</span>
+            <strong id="score">0</strong>
+          </div>
+          <div>
+            <span>Recorde</span>
+            <strong id="best">0</strong>
+          </div>
+          <div>
+            <span>Velocidade</span>
+            <strong id="speed">0</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="game-shell">
+        <canvas id="game" width="1100" height="600" aria-label="Jogo do dinossauro"></canvas>
+        <div class="overlay" id="overlay">
+          <strong>Dino pronto</strong>
+          <span>Espaco/W: pular | S: abaixar | P: pausar | U: voltar | R: reiniciar</span>
+        </div>
+      </section>
+
+      <section class="controls" aria-label="Controles">
+        <button id="startBtn" type="button">Iniciar</button>
+        <button id="pauseBtn" type="button">Pausar</button>
+        <button id="resetBtn" type="button">Reiniciar</button>
+
+        <label class="toggle">
+          <input id="aiToggle" type="checkbox" />
+          <span>Usar agente IA</span>
+        </label>
+
+        <label class="range">
+          <span>Passos por quadro</span>
+          <input id="stepRate" type="range" min="1" max="8" value="1" />
+          <strong id="stepRateValue">1</strong>
+        </label>
+      </section>
+
+      <section class="data-panel" aria-label="Estado da simulacao">
+        <div>
+          <h2>Entrada para a rede</h2>
+          <pre id="stateView">{}</pre>
+        </div>
+        <div>
+          <h2>API rapida</h2>
+          <pre>window.DinoEnv.reset()
+window.DinoEnv.step(1) // 0 nada, 1 pula, 2 abaixa
+window.DinoEnv.getState()
+window.DinoEnv.setAgent((state) =&gt; 1)</pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="game.js?v=7"></script>
+  </body>
+</html>
