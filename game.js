@@ -220,7 +220,72 @@ function reset() {
 
 function getDinoBox() {
   const d = state.dino;
-  return { x: d.x + 4, y: d.y + 4, width: d.width - 4, height: d.height - 4 };
+
+  // Dino normal
+  let hitbox = [
+    // PARTE DA CABECA
+    {
+      x: d.x + 45,
+      y: d.y + 8,
+      width: 39,
+      height: 28
+    },
+
+    // PARTE DO CORPO
+    {
+      x: d.x + 5,
+      y: d.y + 30,
+      width: 62,
+      height: 38
+    },
+
+    // PARTE DA PERNA
+    {
+      x: d.x + 22,
+      y: d.y + 68,
+      width: 30,
+      height: 21
+    }
+  ];
+
+  // Dino abaixado
+  if (d.ducking) {
+    hitbox = [
+      {
+        x: d.x + 18,
+        y: d.y + 18,
+        width: 70,
+        height: 25
+      },
+
+      {
+        x: d.x + 28,
+        y: d.y + 40,
+        width: 45,
+        height: 12
+      }
+    ];
+  }
+
+  return hitbox;
+}
+
+function getObstacleBox(obstacle) {
+  if (obstacle.kind === "bird") {
+    return {
+      x: obstacle.x + 10,
+      y: obstacle.y + 10,
+      width: obstacle.width - 20,
+      height: obstacle.height - 20,
+    };
+  }
+
+  return {
+    x: obstacle.x + 8,
+    y: obstacle.y + 5,
+    width: obstacle.width - 16,
+    height: obstacle.height - 10,
+  };
 }
 
 function currentDinoAsset() {
@@ -366,8 +431,17 @@ function step(action = ACTION.NONE, options = {}) {
   const trackWidth = assets.other.track && assets.other.track.loaded ? assets.other.track.width : CONFIG.width;
   if (state.bgX <= -trackWidth) state.bgX = 0;
 
-  const dinoBox = getDinoBox();
-  if (state.obstacles.some((obstacle) => overlap(dinoBox, obstacle))) {
+const dinoBoxes = getDinoBox();
+
+if (
+  state.obstacles.some((obstacle) => {
+    const obstacleBox = getObstacleBox(obstacle);
+
+    return dinoBoxes.some((box) =>
+      overlap(box, obstacleBox)
+    );
+  })
+) {
     state.alive = false;
     bestScore = Math.max(bestScore, Math.floor(state.score));
     localStorage.setItem("dino-best", String(bestScore));
@@ -562,15 +636,53 @@ function draw() {
 
   drawClouds();
   drawGround();
-  for (const obstacle of state.obstacles) drawObstacle(obstacle);
+
+  for (const obstacle of state.obstacles) {
+    drawObstacle(obstacle);
+  }
+
   drawDino();
 
   if (!state.alive) {
     ctx.fillStyle = "rgba(177, 58, 50, 0.12)";
     ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
+
     const gameOver = assets.other.gameOver;
+
     if (gameOver && gameOver.loaded) {
-      ctx.drawImage(gameOver.image, (CONFIG.width - gameOver.width) / 2, 210);
+      ctx.drawImage(
+        gameOver.image,
+        (CONFIG.width - gameOver.width) / 2,
+        210
+      );
+    }
+
+    // LINHAS DA HITBOXES DO DINOSSAURO, RETIRAR DEPOIS, COR VERMELHA
+    const dinoBoxes = getDinoBox();
+
+    ctx.strokeStyle = "red";
+
+    for (const box of dinoBoxes) {
+      ctx.strokeRect(
+        box.x,
+        box.y,
+        box.width,
+        box.height
+      );
+    }
+
+    // LINHA DAS HITBOXES DOS OBSTACULOS, TIRAR DEPOIS, COR AZUL
+    for (const obstacle of state.obstacles) {
+      const box = getObstacleBox(obstacle);
+
+      ctx.strokeStyle = "blue";
+
+      ctx.strokeRect(
+        box.x,
+        box.y,
+        box.width,
+        box.height
+      );
     }
   }
 }
