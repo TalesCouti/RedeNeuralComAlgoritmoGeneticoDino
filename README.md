@@ -6,7 +6,7 @@ Jogo simples inspirado no dinossauro do Chrome, feito em HTML, CSS e JavaScript 
 
 Abra `index.html` no navegador.
 
-Para carregar o cerebro treinado em Python (`dino_brain.json`), prefira abrir com servidor local:
+Para carregar o cerebro treinado em Python (`cerebro_dino.json`), prefira abrir com servidor local:
 
 ```bash
 python -m http.server 8000
@@ -41,16 +41,16 @@ Os sprites ficam em `Sprites/`, seguindo a estrutura do projeto Pygame:
 O jogo expoe `window.DinoEnv` no navegador:
 
 ```js
-DinoEnv.reset();
-DinoEnv.step(0); // nada
-DinoEnv.step(1); // pula
-DinoEnv.step(2); // abaixa
-DinoEnv.getState();
+DinoEnv.reiniciar();
+DinoEnv.passo(0); // nada
+DinoEnv.passo(1); // pula
+DinoEnv.passo(2); // abaixa
+DinoEnv.obterEstado();
 ```
 
 ## Treino com NumPy
 
-O arquivo `train_numpy_ai.py` treina uma rede neural simples usando NumPy e algoritmo genetico. Ele nao altera o jogo durante o treino; apenas gera o arquivo `dino_brain.json`.
+O arquivo `treinar_ia_numpy.py` treina uma rede neural simples usando NumPy e algoritmo genetico. Ele nao altera o jogo durante o treino; apenas gera o arquivo `cerebro_dino.json`.
 
 Instale o NumPy se ainda nao tiver:
 
@@ -61,55 +61,55 @@ pip install numpy
 Depois rode:
 
 ```bash
-python train_numpy_ai.py
+python treinar_ia_numpy.py
 ```
 
 Quando terminar, ele salva a melhor rede em:
 
 ```text
-dino_brain.json
+cerebro_dino.json
 ```
 
 Para usar essa rede no jogo, abra o console do navegador e execute:
 
 ```js
-await DinoEnv.loadNumpyBrain("dino_brain.json");
-DinoEnv.play();
+await DinoEnv.carregarCerebroNumpy("cerebro_dino.json");
+DinoEnv.iniciar();
 ```
 
 Isso carrega os pesos treinados no Python, transforma a rede em um agente JavaScript e marca automaticamente `Usar agente IA`.
 
-Tambem da para plugar um agente:
+Tambem da para plugar um agente manualmente:
 
 ```js
-DinoEnv.setAgent((state) => {
-  if (state.obstacleDistance < 150 && state.grounded) return 1;
+DinoEnv.definirAgente((estado) => {
+  if (estado.distanciaObstaculo < 150 && estado.noChao) return 1;
   return 0;
 });
 
-DinoEnv.play();
+DinoEnv.iniciar();
 ```
 
 Para avaliar um individuo sem depender da animacao:
 
 ```js
-const resultado = DinoEnv.runEpisode((state) => {
-  if (state.obstacleDistance !== null && state.obstacleDistance < 145 && state.grounded) return 1;
+const resultado = DinoEnv.rodarEpisodio((estado) => {
+  if (estado.distanciaObstaculo !== null && estado.distanciaObstaculo < 145 && estado.noChao) return 1;
   return 0;
 }, 5000);
 ```
 
 O estado retornado tem dados pensados para uma rede neural:
 
-- `speed`
+- `velocidade`
 - `dinoY`
-- `dinoVelocityY`
-- `grounded`
-- `ducking`
-- `obstacleDistance`
-- `obstacleWidth`
-- `obstacleHeight`
-- `obstacleY`
-- `obstacleType`
+- `velocidadeVerticalDino`
+- `noChao`
+- `abaixado`
+- `distanciaObstaculo`
+- `larguraObstaculo`
+- `alturaObstaculo`
+- `obstaculoY`
+- `tipoObstaculo`
 
-O `step(action)` retorna `{ state, reward, done }`, o que facilita rodar treino manual ou automatizado.
+O `passo(acao)` retorna `{ estado, recompensa, finalizado }`, o que facilita rodar treino manual ou automatizado.

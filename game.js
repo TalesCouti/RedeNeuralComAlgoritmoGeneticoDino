@@ -1,860 +1,823 @@
 "use strict";
 
-const canvas = document.querySelector("#game");
-const ctx = canvas.getContext("2d");
+const tela = document.querySelector("#jogo");
+const contexto = tela.getContext("2d");
 
-const ui = {
-  score: document.querySelector("#score"),
-  best: document.querySelector("#best"),
-  speed: document.querySelector("#speed"),
-  overlay: document.querySelector("#overlay"),
-  stateView: document.querySelector("#stateView"),
-  startBtn: document.querySelector("#startBtn"),
-  pauseBtn: document.querySelector("#pauseBtn"),
-  resetBtn: document.querySelector("#resetBtn"),
-  aiToggle: document.querySelector("#aiToggle"),
-  stepRate: document.querySelector("#stepRate"),
-  stepRateValue: document.querySelector("#stepRateValue"),
+const interfaceUsuario = {
+  pontuacao: document.querySelector("#pontuacao"),
+  recorde: document.querySelector("#recorde"),
+  velocidade: document.querySelector("#velocidade"),
+  sobreposicao: document.querySelector("#sobreposicao"),
+  visualizacaoEstado: document.querySelector("#visualizacaoEstado"),
+  botaoIniciar: document.querySelector("#botaoIniciar"),
+  botaoPausar: document.querySelector("#botaoPausar"),
+  botaoReiniciar: document.querySelector("#botaoReiniciar"),
+  alternarIa: document.querySelector("#alternarIa"),
+  passosPorQuadro: document.querySelector("#passosPorQuadro"),
+  valorPassosPorQuadro: document.querySelector("#valorPassosPorQuadro"),
 };
 
-const CONFIG = {
-  width: 1100,
-  height: 600,
+const configuracao = {
+  largura: 1100,
+  altura: 600,
   dinoX: 80,
-  dinoRunY: 310,
-  dinoDuckY: 340,
-  trackY: 380,
-  jumpVelocity: 6,
-  jumpDecay: 0.1,
-  jumpScale: 1,
-  baseSpeed: 3,
+  dinoCorrendoY: 310,
+  dinoAbaixadoY: 340,
+  pistaY: 380,
+  velocidadePulo: 6,
+  decaimentoPulo: 0.1,
+  escalaPulo: 1,
+  velocidadeBase: 3,
 };
 
-const ACTION = {
-  NONE: 0,
-  JUMP: 1,
-  DUCK: 2,
+const acao = {
+  nada: 0,
+  pular: 1,
+  abaixar: 2,
 };
 
-const ASSET_SOURCES = {
+const fontesAssets = {
   dino: {
-    idle: "Sprites/Dino/DinoStart.png",
-    run: ["Sprites/Dino/DinoRun1.png", "Sprites/Dino/DinoRun2.png"],
-    jump: "Sprites/Dino/DinoJump.png",
-    duck: ["Sprites/Dino/DinoDuck1.png", "Sprites/Dino/DinoDuck2.png"],
-    dead: "Sprites/Dino/DinoDead.png",
+    parado: "Sprites/Dino/DinoStart.png",
+    correndo: ["Sprites/Dino/DinoRun1.png", "Sprites/Dino/DinoRun2.png"],
+    pulando: "Sprites/Dino/DinoJump.png",
+    abaixado: ["Sprites/Dino/DinoDuck1.png", "Sprites/Dino/DinoDuck2.png"],
+    morto: "Sprites/Dino/DinoDead.png",
   },
-  cactus: {
-    small: [
+  cacto: {
+    pequeno: [
       "Sprites/Cactus/SmallCactus1.png",
       "Sprites/Cactus/SmallCactus2.png",
       "Sprites/Cactus/SmallCactus3.png",
     ],
-    large: [
+    grande: [
       "Sprites/Cactus/LargeCactus1.png",
       "Sprites/Cactus/LargeCactus2.png",
       "Sprites/Cactus/LargeCactus3.png",
     ],
   },
-  bird: ["Sprites/Bird/Bird1.png", "Sprites/Bird/Bird2.png"],
-  other: {
-    cloud: "Sprites/Other/Cloud.png",
-    track: "Sprites/Other/Track.png",
-    gameOver: "Sprites/Other/GameOver.png",
-    reset: "Sprites/Other/Reset.png",
+  passaro: ["Sprites/Bird/Bird1.png", "Sprites/Bird/Bird2.png"],
+  outros: {
+    nuvem: "Sprites/Other/Cloud.png",
+    pista: "Sprites/Other/Track.png",
+    fimDeJogo: "Sprites/Other/GameOver.png",
+    reiniciar: "Sprites/Other/Reset.png",
   },
 };
 
-const assets = {
+const imagens = {
   dino: {
-    idle: null,
-    run: [],
-    jump: null,
-    duck: [],
-    dead: null,
+    parado: null,
+    correndo: [],
+    pulando: null,
+    abaixado: [],
+    morto: null,
   },
-  cactus: {
-    small: [],
-    large: [],
+  cacto: {
+    pequeno: [],
+    grande: [],
   },
-  bird: [],
-  other: {
-    cloud: null,
-    track: null,
-    gameOver: null,
-    reset: null,
+  passaro: [],
+  outros: {
+    nuvem: null,
+    pista: null,
+    fimDeJogo: null,
+    reiniciar: null,
   },
 };
 
-let state;
-let keys = new Set();
-let running = false;
-let lastFrame = 0;
-let aiAgent = null;
-let bestScore = Number(localStorage.getItem("dino-best") || 0);
+let estado;
+let teclasPressionadas = new Set();
+let jogoRodando = false;
+let ultimoQuadro = 0;
+let agenteIa = null;
+let recorde = Number(localStorage.getItem("dino-recorde") || localStorage.getItem("dino-best") || 0);
 
-function loadImage(source) {
-  const image = new Image();
-  const asset = { loaded: false, image, width: 0, height: 0 };
-  image.addEventListener("load", () => {
-    asset.loaded = true;
-    asset.width = image.naturalWidth || image.width;
-    asset.height = image.naturalHeight || image.height;
-    if (state) draw();
+function carregarImagem(caminho) {
+  const imagem = new Image();
+  const asset = { carregado: false, imagem, largura: 0, altura: 0 };
+
+  imagem.addEventListener("load", () => {
+    asset.carregado = true;
+    asset.largura = imagem.naturalWidth || imagem.width;
+    asset.altura = imagem.naturalHeight || imagem.height;
+    if (estado) desenhar();
   });
-  image.addEventListener("error", () => {
-    console.warn(`Nao foi possivel carregar o asset: ${source}`);
+
+  imagem.addEventListener("error", () => {
+    console.warn(`Nao foi possivel carregar o asset: ${caminho}`);
   });
-  image.src = source;
+
+  imagem.src = caminho;
   return asset;
 }
 
-assets.dino.idle = loadImage(ASSET_SOURCES.dino.idle);
-assets.dino.run = ASSET_SOURCES.dino.run.map(loadImage);
-assets.dino.jump = loadImage(ASSET_SOURCES.dino.jump);
-assets.dino.duck = ASSET_SOURCES.dino.duck.map(loadImage);
-assets.dino.dead = loadImage(ASSET_SOURCES.dino.dead);
-assets.cactus.small = ASSET_SOURCES.cactus.small.map(loadImage);
-assets.cactus.large = ASSET_SOURCES.cactus.large.map(loadImage);
-assets.bird = ASSET_SOURCES.bird.map(loadImage);
-assets.other.cloud = loadImage(ASSET_SOURCES.other.cloud);
-assets.other.track = loadImage(ASSET_SOURCES.other.track);
-assets.other.gameOver = loadImage(ASSET_SOURCES.other.gameOver);
-assets.other.reset = loadImage(ASSET_SOURCES.other.reset);
+imagens.dino.parado = carregarImagem(fontesAssets.dino.parado);
+imagens.dino.correndo = fontesAssets.dino.correndo.map(carregarImagem);
+imagens.dino.pulando = carregarImagem(fontesAssets.dino.pulando);
+imagens.dino.abaixado = fontesAssets.dino.abaixado.map(carregarImagem);
+imagens.dino.morto = carregarImagem(fontesAssets.dino.morto);
+imagens.cacto.pequeno = fontesAssets.cacto.pequeno.map(carregarImagem);
+imagens.cacto.grande = fontesAssets.cacto.grande.map(carregarImagem);
+imagens.passaro = fontesAssets.passaro.map(carregarImagem);
+imagens.outros.nuvem = carregarImagem(fontesAssets.outros.nuvem);
+imagens.outros.pista = carregarImagem(fontesAssets.outros.pista);
+imagens.outros.fimDeJogo = carregarImagem(fontesAssets.outros.fimDeJogo);
+imagens.outros.reiniciar = carregarImagem(fontesAssets.outros.reiniciar);
 
-function rand(min, max) {
-  return Math.random() * (max - min) + min;
+function aleatorioEntre(minimo, maximo) {
+  return Math.random() * (maximo - minimo) + minimo;
 }
 
-function randomChoice(items) {
-  return items[Math.floor(Math.random() * items.length)];
+function escolherAleatorio(itens) {
+  return itens[Math.floor(Math.random() * itens.length)];
 }
 
-function assetSize(asset, fallbackWidth, fallbackHeight) {
+function tamanhoAsset(asset, larguraPadrao, alturaPadrao) {
   return {
-    width: asset && asset.loaded ? asset.width : fallbackWidth,
-    height: asset && asset.loaded ? asset.height : fallbackHeight,
+    largura: asset && asset.carregado ? asset.largura : larguraPadrao,
+    altura: asset && asset.carregado ? asset.altura : alturaPadrao,
   };
 }
 
-function createObstacle() {
-  const obstacleType = Math.floor(Math.random() * 3);
+function criarObstaculo() {
+  const tipoObstaculo = Math.floor(Math.random() * 3);
 
-  if (obstacleType === 0) {
-    const variant = Math.floor(Math.random() * 3);
-    const size = assetSize(assets.cactus.small[variant], [34, 68, 102][variant], 70);
+  if (tipoObstaculo === 0) {
+    const variante = Math.floor(Math.random() * 3);
+    const tamanho = tamanhoAsset(imagens.cacto.pequeno[variante], [34, 68, 102][variante], 70);
     return {
-      kind: "smallCactus",
-      type: variant,
-      x: CONFIG.width,
+      tipo: "cactoPequeno",
+      variante,
+      x: configuracao.largura,
       y: 325,
-      width: size.width,
-      height: size.height,
-      passed: false,
+      largura: tamanho.largura,
+      altura: tamanho.altura,
+      passou: false,
     };
   }
 
-  if (obstacleType === 1) {
-    const variant = Math.floor(Math.random() * 3);
-    const size = assetSize(assets.cactus.large[variant], [50, 100, 150][variant], 95);
+  if (tipoObstaculo === 1) {
+    const variante = Math.floor(Math.random() * 3);
+    const tamanho = tamanhoAsset(imagens.cacto.grande[variante], [50, 100, 150][variante], 95);
     return {
-      kind: "largeCactus",
-      type: variant,
-      x: CONFIG.width,
+      tipo: "cactoGrande",
+      variante,
+      x: configuracao.largura,
       y: 300,
-      width: size.width,
-      height: size.height,
-      passed: false,
+      largura: tamanho.largura,
+      altura: tamanho.altura,
+      passou: false,
     };
   }
 
-  const size = assetSize(assets.bird[0], 92, 65);
+  const tamanho = tamanhoAsset(imagens.passaro[0], 92, 65);
   return {
-    kind: "bird",
-    type: 0,
-    x: CONFIG.width,
-    y: randomChoice([250, 290, 320]),
-    width: size.width,
-    height: size.height,
-    index: 0,
-    passed: false,
+    tipo: "passaro",
+    variante: 0,
+    x: configuracao.largura,
+    y: escolherAleatorio([250, 290, 320]),
+    largura: tamanho.largura,
+    altura: tamanho.altura,
+    passou: false,
   };
 }
 
-function reset() {
-  running = false;
-  lastFrame = 0;
-  state = {
+function reiniciar() {
+  jogoRodando = false;
+  ultimoQuadro = 0;
+  estado = {
     tick: 0,
-    score: 0,
-    alive: true,
-    speed: CONFIG.velocidadeBase,
-    bgX: 0,
+    pontuacao: 0,
+    vivo: true,
+    velocidade: configuracao.velocidadeBase,
+    pistaX: 0,
     dino: {
-      x: CONFIG.dinoX,
-      y: CONFIG.dinoRunY,
-      width: 88,
-      height: 94,
-      jumpVel: CONFIG.VelocidadePulo,
-      grounded: true,
-      ducking: false,
-      jumping: false,
-      running: false,
-      stepIndex: 0,
-      mode: "idle",
+      x: configuracao.dinoX,
+      y: configuracao.dinoCorrendoY,
+      largura: 88,
+      altura: 94,
+      velocidadePulo: configuracao.velocidadePulo,
+      noChao: true,
+      abaixado: false,
+      pulando: false,
+      correndo: false,
+      indicePasso: 0,
+      modo: "parado",
     },
-    obstacles: [],
-    cloud: {
-      x: CONFIG.width + Math.floor(rand(800, 1000)),
-      y: Math.floor(rand(50, 100)),
-      width: 92,
+    obstaculos: [],
+    nuvem: {
+      x: configuracao.largura + Math.floor(aleatorioEntre(800, 1000)),
+      y: Math.floor(aleatorioEntre(50, 100)),
+      largura: 92,
     },
   };
-  applyDinoSize();
-  ui.overlay.hidden = false;
-  ui.overlay.querySelector("strong").textContent = "Dino pronto";
-  updateUi();
-  draw();
-  return getState();
+
+  aplicarTamanhoDino();
+  interfaceUsuario.sobreposicao.hidden = false;
+  interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Dino pronto";
+  atualizarInterface();
+  desenhar();
+  return obterEstado();
 }
 
-function getDinoBox() {
-  const d = state.dino;
+function obterCaixasDino() {
+  const dino = estado.dino;
 
-  // Dino normal
-  let hitbox = [
-    // PARTE DA CABECA
-    {
-      x: d.x + 45,
-      y: d.y + 8,
-      width: 39,
-      height: 28
-    },
-
-    // PARTE DO CORPO
-    {
-      x: d.x + 5,
-      y: d.y + 30,
-      width: 62,
-      height: 38
-    },
-
-    // PARTE DA PERNA
-    {
-      x: d.x + 22,
-      y: d.y + 68,
-      width: 30,
-      height: 21
-    }
-  ];
-
-  // Dino abaixado
-  if (d.ducking) {
-    hitbox = [
-      {
-        x: d.x + 18,
-        y: d.y + 18,
-        width: 70,
-        height: 25
-      },
-
-      {
-        x: d.x + 28,
-        y: d.y + 40,
-        width: 45,
-        height: 12
-      }
+  if (dino.abaixado) {
+    return [
+      { x: dino.x + 18, y: dino.y + 18, largura: 70, altura: 25 },
+      { x: dino.x + 28, y: dino.y + 40, largura: 45, altura: 12 },
     ];
   }
 
-  return hitbox;
+  return [
+    { x: dino.x + 45, y: dino.y + 8, largura: 39, altura: 28 },
+    { x: dino.x + 5, y: dino.y + 30, largura: 62, altura: 38 },
+    { x: dino.x + 22, y: dino.y + 68, largura: 30, altura: 21 },
+  ];
 }
 
-function getObstacleBox(obstacle) {
-  if (obstacle.kind === "bird") {
+function obterCaixaObstaculo(obstaculo) {
+  if (obstaculo.tipo === "passaro") {
     return {
-      x: obstacle.x + 10,
-      y: obstacle.y + 10,
-      width: obstacle.width - 20,
-      height: obstacle.height - 20,
+      x: obstaculo.x + 10,
+      y: obstaculo.y + 10,
+      largura: obstaculo.largura - 20,
+      altura: obstaculo.altura - 20,
     };
   }
 
   return {
-    x: obstacle.x + 8,
-    y: obstacle.y + 5,
-    width: obstacle.width - 16,
-    height: obstacle.height - 10,
+    x: obstaculo.x + 8,
+    y: obstaculo.y + 5,
+    largura: obstaculo.largura - 16,
+    altura: obstaculo.altura - 10,
   };
 }
 
-function currentDinoAsset() {
-  const d = state.dino;
-  const frame = Math.floor(d.stepIndex / 5) % 2;
+function assetAtualDino() {
+  const dino = estado.dino;
+  const quadro = Math.floor(dino.indicePasso / 5) % 2;
 
-  if (!state.alive) return assets.dino.dead;
-  if (d.jumping || !d.grounded) return assets.dino.jump;
-  if (!running) return assets.dino.idle;
-  if (d.ducking) return assets.dino.duck[frame];
-  return assets.dino.run[frame];
+  if (!estado.vivo) return imagens.dino.morto;
+  if (dino.pulando || !dino.noChao) return imagens.dino.pulando;
+  if (!jogoRodando) return imagens.dino.parado;
+  if (dino.abaixado) return imagens.dino.abaixado[quadro];
+  return imagens.dino.correndo[quadro];
 }
 
-function applyDinoSize() {
-  const d = state.dino;
-  const asset = currentDinoAsset();
-  if (asset && asset.loaded) {
-    d.width = asset.width;
-    d.height = asset.height;
-  } else if (d.ducking) {
-    d.width = 118;
-    d.height = 60;
+function aplicarTamanhoDino() {
+  const dino = estado.dino;
+  const asset = assetAtualDino();
+
+  if (asset && asset.carregado) {
+    dino.largura = asset.largura;
+    dino.altura = asset.altura;
+  } else if (dino.abaixado) {
+    dino.largura = 118;
+    dino.altura = 60;
   } else {
-    d.width = 88;
-    d.height = 94;
+    dino.largura = 88;
+    dino.altura = 94;
   }
 }
 
-function overlap(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+function sobrepoe(caixaA, caixaB) {
+  return (
+    caixaA.x < caixaB.x + caixaB.largura &&
+    caixaA.x + caixaA.largura > caixaB.x &&
+    caixaA.y < caixaB.y + caixaB.altura &&
+    caixaA.y + caixaA.altura > caixaB.y
+  );
 }
 
-function nextObstacle() {
-  return state.obstacles.find((obstacle) => obstacle.x + obstacle.width >= state.dino.x) || null;
+function proximoObstaculo() {
+  return estado.obstaculos.find((obstaculo) => obstaculo.x + obstaculo.largura >= estado.dino.x) || null;
 }
 
-function getState() {
-  const obstacle = nextObstacle();
-  const d = state.dino;
+function obterEstado() {
+  const obstaculo = proximoObstaculo();
+  const dino = estado.dino;
   return {
-    alive: state.alive,
-    score: Math.floor(state.score),
-    speed: Number(state.speed.toFixed(2)),
-    dinoY: Number((CONFIG.dinoRunY - d.y).toFixed(2)),
-    dinoVelocityY: Number(d.jumpVel.toFixed(2)),
-    grounded: d.grounded,
-    ducking: d.ducking,
-    jumping: d.jumping,
-    mode: d.mode,
-    obstacleDistance: obstacle ? Number((obstacle.x - d.x).toFixed(2)) : null,
-    obstacleWidth: obstacle ? obstacle.width : 0,
-    obstacleHeight: obstacle ? obstacle.height : 0,
-    obstacleY: obstacle ? obstacle.y : 0,
-    obstacleType: obstacle ? obstacle.kind : "none",
+    vivo: estado.vivo,
+    pontuacao: Math.floor(estado.pontuacao),
+    velocidade: Number(estado.velocidade.toFixed(2)),
+    dinoY: Number((configuracao.dinoCorrendoY - dino.y).toFixed(2)),
+    velocidadeVerticalDino: Number(dino.velocidadePulo.toFixed(2)),
+    noChao: dino.noChao,
+    abaixado: dino.abaixado,
+    pulando: dino.pulando,
+    modo: dino.modo,
+    distanciaObstaculo: obstaculo ? Number((obstaculo.x - dino.x).toFixed(2)) : null,
+    larguraObstaculo: obstaculo ? obstaculo.largura : 0,
+    alturaObstaculo: obstaculo ? obstaculo.altura : 0,
+    obstaculoY: obstaculo ? obstaculo.y : 0,
+    tipoObstaculo: obstaculo ? obstaculo.tipo : "nenhum",
   };
 }
 
-function normalizeAction(action) {
-  if (action === "jump") return ACTION.JUMP;
-  if (action === "duck") return ACTION.DUCK;
-  if (action === true) return ACTION.JUMP;
-  return Number(action) || ACTION.NONE;
+function normalizarAcao(acaoRecebida) {
+  if (acaoRecebida === "pular") return acao.pular;
+  if (acaoRecebida === "abaixar") return acao.abaixar;
+  if (acaoRecebida === true) return acao.pular;
+  return Number(acaoRecebida) || acao.nada;
 }
 
-function step(action = ACTION.NONE, options = {}) {
-  const shouldRender = options.render !== false;
+function passo(acaoRecebida = acao.nada, opcoes = {}) {
+  const deveDesenhar = opcoes.render !== false && opcoes.desenhar !== false;
 
-  if (!state.alive) {
-    return { state: getState(), reward: -10, done: true };
+  if (!estado.vivo) {
+    return { estado: obterEstado(), recompensa: -10, finalizado: true };
   }
 
-  const d = state.dino;
-  const chosen = normalizeAction(action);
+  const dino = estado.dino;
+  const escolhida = normalizarAcao(acaoRecebida);
 
-  if (chosen === ACTION.JUMP && !d.jumping) {
-    d.ducking = false;
-    d.running = false;
-    d.jumping = true;
-    d.grounded = false;
-  } else if (chosen === ACTION.DUCK && !d.jumping) {
-    d.ducking = true;
-    d.running = false;
-    d.grounded = true;
-  } else if (!d.jumping) {
-    d.ducking = false;
-    d.running = true;
-    d.grounded = true;
+  if (escolhida === acao.pular && !dino.pulando) {
+    dino.abaixado = false;
+    dino.correndo = false;
+    dino.pulando = true;
+    dino.noChao = false;
+  } else if (escolhida === acao.abaixar && !dino.pulando) {
+    dino.abaixado = true;
+    dino.correndo = false;
+    dino.noChao = true;
+  } else if (!dino.pulando) {
+    dino.abaixado = false;
+    dino.correndo = true;
+    dino.noChao = true;
   }
 
-  if (d.ducking) {
-    d.mode = "duck";
-    d.y = CONFIG.dinoDuckY;
-    d.stepIndex = (d.stepIndex + 1) % 10;
+  if (dino.abaixado) {
+    dino.modo = "abaixado";
+    dino.y = configuracao.dinoAbaixadoY;
+    dino.indicePasso = (dino.indicePasso + 1) % 10;
   }
 
-  if (d.running) {
-    d.mode = "run";
-    d.y = CONFIG.dinoRunY;
-    d.stepIndex = (d.stepIndex + 1) % 10;
+  if (dino.correndo) {
+    dino.modo = "correndo";
+    dino.y = configuracao.dinoCorrendoY;
+    dino.indicePasso = (dino.indicePasso + 1) % 10;
   }
 
-  if (d.jumping) {
-    d.mode = "jump";
-    d.y -= d.jumpVel * CONFIG.jumpScale;
-    d.jumpVel -= CONFIG.jumpDecay;
-    if (d.jumpVel < -CONFIG.jumpVelocity) {
-      d.jumping = false;
-      d.running = true;
-      d.grounded = true;
-      d.jumpVel = CONFIG.jumpVelocity;
-      d.y = CONFIG.dinoRunY;
+  if (dino.pulando) {
+    dino.modo = "pulando";
+    dino.y -= dino.velocidadePulo * configuracao.escalaPulo;
+    dino.velocidadePulo -= configuracao.decaimentoPulo;
+
+    if (dino.velocidadePulo < -configuracao.velocidadePulo) {
+      dino.pulando = false;
+      dino.correndo = true;
+      dino.noChao = true;
+      dino.velocidadePulo = configuracao.velocidadePulo;
+      dino.y = configuracao.dinoCorrendoY;
     }
   }
 
-  applyDinoSize();
+  aplicarTamanhoDino();
 
-  state.tick += 0.1;
-  state.score += 0.1;
-  if (state.score % 100 === 0) {
-    state.speed += 0.1;
+  estado.tick += 0.1;
+  estado.pontuacao += 0.1;
+
+  if (estado.pontuacao % 100 === 0) {
+    estado.velocidade += 0.1;
   }
 
-  for (const obstacle of state.obstacles) {
-    obstacle.x -= state.speed;
-    if (!obstacle.passed && obstacle.x + obstacle.width < d.x) {
-      obstacle.passed = true;
+  for (const obstaculo of estado.obstaculos) {
+    obstaculo.x -= estado.velocidade;
+    if (!obstaculo.passou && obstaculo.x + obstaculo.largura < dino.x) {
+      obstaculo.passou = true;
     }
   }
 
-  state.obstacles = state.obstacles.filter((obstacle) => obstacle.x + obstacle.width > 0);
-  if (state.obstacles.length === 0) {
-    state.obstacles.push(createObstacle());
+  estado.obstaculos = estado.obstaculos.filter((obstaculo) => obstaculo.x + obstaculo.largura > 0);
+
+  if (estado.obstaculos.length === 0) {
+    estado.obstaculos.push(criarObstaculo());
   }
 
-  state.cloud.x -= state.speed;
-  const cloudWidth = assets.other.cloud && assets.other.cloud.loaded ? assets.other.cloud.width : state.cloud.width;
-  if (state.cloud.x < -cloudWidth) {
-    state.cloud.x = CONFIG.width + Math.floor(rand(2500, 3000));
-    state.cloud.y = Math.floor(rand(50, 100));
+  estado.nuvem.x -= estado.velocidade;
+  const larguraNuvem = imagens.outros.nuvem && imagens.outros.nuvem.carregado ? imagens.outros.nuvem.largura : estado.nuvem.largura;
+
+  if (estado.nuvem.x < -larguraNuvem) {
+    estado.nuvem.x = configuracao.largura + Math.floor(aleatorioEntre(2500, 3000));
+    estado.nuvem.y = Math.floor(aleatorioEntre(50, 100));
   }
 
-  state.bgX -= state.speed;
-  const trackWidth = assets.other.track && assets.other.track.loaded ? assets.other.track.width : CONFIG.width;
-  if (state.bgX <= -trackWidth) state.bgX = 0;
+  estado.pistaX -= estado.velocidade;
+  const larguraPista = imagens.outros.pista && imagens.outros.pista.carregado ? imagens.outros.pista.largura : configuracao.largura;
+  if (estado.pistaX <= -larguraPista) estado.pistaX = 0;
 
-const dinoBoxes = getDinoBox();
+  const caixasDino = obterCaixasDino();
+  const colidiu = estado.obstaculos.some((obstaculo) => {
+    const caixaObstaculo = obterCaixaObstaculo(obstaculo);
+    return caixasDino.some((caixaDino) => sobrepoe(caixaDino, caixaObstaculo));
+  });
 
-if (
-  state.obstacles.some((obstacle) => {
-    const obstacleBox = getObstacleBox(obstacle);
+  if (colidiu) {
+    estado.vivo = false;
+    recorde = Math.max(recorde, Math.floor(estado.pontuacao));
+    localStorage.setItem("dino-recorde", String(recorde));
+    localStorage.setItem("dino-best", String(recorde));
+    interfaceUsuario.sobreposicao.hidden = false;
+    interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Fim de jogo";
 
-    return dinoBoxes.some((box) =>
-      overlap(box, obstacleBox)
-    );
-  })
-) {
-    state.alive = false;
-    bestScore = Math.max(bestScore, Math.floor(state.score));
-    localStorage.setItem("dino-best", String(bestScore));
-    ui.overlay.hidden = false;
-    ui.overlay.querySelector("strong").textContent = "Fim de jogo";
-    if (shouldRender) {
-      updateUi();
-      draw();
+    if (deveDesenhar) {
+      atualizarInterface();
+      desenhar();
     }
-    return { state: getState(), reward: -10, done: true };
+
+    return { estado: obterEstado(), recompensa: -10, finalizado: true };
   }
 
-  const reward = 1;
-  if (shouldRender) {
-    updateUi();
-    draw();
+  if (deveDesenhar) {
+    atualizarInterface();
+    desenhar();
   }
-  return { state: getState(), reward, done: false };
+
+  return { estado: obterEstado(), recompensa: 1, finalizado: false };
 }
 
-function drawDinoSprite() {
-  const d = state.dino;
-  const sprite = currentDinoAsset();
-  if (!sprite || !sprite.loaded) return false;
+function desenharSpriteDino() {
+  const dino = estado.dino;
+  const sprite = assetAtualDino();
+  if (!sprite || !sprite.carregado) return false;
 
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sprite.image, d.x, d.y);
-  ctx.restore();
+  contexto.save();
+  contexto.imageSmoothingEnabled = false;
+  contexto.drawImage(sprite.imagem, dino.x, dino.y);
+  contexto.restore();
   return true;
 }
 
-function drawDino() {
-  if (drawDinoSprite()) return;
-  drawFallbackDino();
+function desenharDino() {
+  if (desenharSpriteDino()) return;
+  desenharDinoFallback();
 }
 
-function drawFallbackDino() {
-  const d = state.dino;
-  const foot = Math.floor(state.tick / 7) % 2;
-  const color = "#535353";
-  ctx.save();
-  ctx.fillStyle = color;
+function desenharDinoFallback() {
+  const dino = estado.dino;
+  const pe = Math.floor(estado.tick / 7) % 2;
+  const cor = "#535353";
 
-  if (d.ducking && d.grounded) {
-    const y = CONFIG.trackY - 40;
-    ctx.fillRect(d.x + 8, y + 14, 58, 22);
-    ctx.fillRect(d.x + 48, y + 2, 28, 24);
-    ctx.fillRect(d.x + 72, y + 12, 14, 8);
-    ctx.fillRect(d.x - 8, y + 21, 24, 8);
-    ctx.fillRect(d.x + 2, y + 34, 16, 8);
-    ctx.fillRect(d.x + 42, y + 34, 18, 8);
-    ctx.fillStyle = "#f7f7f7";
-    ctx.fillRect(d.x + 67, y + 8, 4, 4);
-    ctx.fillStyle = color;
-    ctx.fillRect(d.x + 74, y + 22, 8, 4);
+  contexto.save();
+  contexto.fillStyle = cor;
+
+  if (dino.abaixado && dino.noChao) {
+    const y = configuracao.pistaY - 40;
+    contexto.fillRect(dino.x + 8, y + 14, 58, 22);
+    contexto.fillRect(dino.x + 48, y + 2, 28, 24);
+    contexto.fillRect(dino.x + 72, y + 12, 14, 8);
+    contexto.fillRect(dino.x - 8, y + 21, 24, 8);
+    contexto.fillRect(dino.x + 2, y + 34, 16, 8);
+    contexto.fillRect(dino.x + 42, y + 34, 18, 8);
+    contexto.fillStyle = "#f7f7f7";
+    contexto.fillRect(dino.x + 67, y + 8, 4, 4);
+    contexto.fillStyle = cor;
+    contexto.fillRect(dino.x + 74, y + 22, 8, 4);
   } else {
-    const x = d.x;
-    const y = d.y;
+    const x = dino.x;
+    const y = dino.y;
 
-    ctx.fillRect(x + 18, y + 18, 33, 42);
-    ctx.fillRect(x + 39, y + 2, 35, 30);
-    ctx.fillRect(x + 69, y + 14, 12, 8);
-    ctx.fillRect(x + 51, y + 31, 9, 9);
-    ctx.fillRect(x + 7, y + 31, 15, 9);
-    ctx.fillRect(x - 8, y + 38, 16, 8);
-    ctx.fillRect(x - 18, y + 45, 12, 7);
-    ctx.fillRect(x + 23, y + 58, 9, 17);
-    ctx.fillRect(x + 42, y + 58, 9, 17);
+    contexto.fillRect(x + 18, y + 18, 33, 42);
+    contexto.fillRect(x + 39, y + 2, 35, 30);
+    contexto.fillRect(x + 69, y + 14, 12, 8);
+    contexto.fillRect(x + 51, y + 31, 9, 9);
+    contexto.fillRect(x + 7, y + 31, 15, 9);
+    contexto.fillRect(x - 8, y + 38, 16, 8);
+    contexto.fillRect(x - 18, y + 45, 12, 7);
+    contexto.fillRect(x + 23, y + 58, 9, 17);
+    contexto.fillRect(x + 42, y + 58, 9, 17);
 
-    if (d.grounded) {
-      if (foot === 0) {
-        ctx.fillRect(x + 18, y + 72, 20, 6);
-        ctx.fillRect(x + 42, y + 72, 9, 6);
+    if (dino.noChao) {
+      if (pe === 0) {
+        contexto.fillRect(x + 18, y + 72, 20, 6);
+        contexto.fillRect(x + 42, y + 72, 9, 6);
       } else {
-        ctx.fillRect(x + 23, y + 72, 9, 6);
-        ctx.fillRect(x + 38, y + 72, 22, 6);
+        contexto.fillRect(x + 23, y + 72, 9, 6);
+        contexto.fillRect(x + 38, y + 72, 22, 6);
       }
     } else {
-      ctx.fillRect(x + 20, y + 70, 13, 6);
-      ctx.fillRect(x + 42, y + 70, 13, 6);
+      contexto.fillRect(x + 20, y + 70, 13, 6);
+      contexto.fillRect(x + 42, y + 70, 13, 6);
     }
 
-    ctx.fillStyle = "#f7f7f7";
-    ctx.fillRect(x + 62, y + 9, 4, 4);
-    ctx.fillStyle = color;
-    ctx.fillRect(x + 68, y + 26, 9, 4);
-    ctx.fillRect(x + 32, y + 36, 12, 5);
+    contexto.fillStyle = "#f7f7f7";
+    contexto.fillRect(x + 62, y + 9, 4, 4);
+    contexto.fillStyle = cor;
+    contexto.fillRect(x + 68, y + 26, 9, 4);
+    contexto.fillRect(x + 32, y + 36, 12, 5);
   }
-  ctx.restore();
+
+  contexto.restore();
 }
 
-function drawObstacle(obstacle) {
+function desenharObstaculo(obstaculo) {
   let asset = null;
-  if (obstacle.kind === "smallCactus") {
-    asset = assets.cactus.small[obstacle.type];
-  } else if (obstacle.kind === "largeCactus") {
-    asset = assets.cactus.large[obstacle.type];
-  } else if (obstacle.kind === "bird") {
-    const frame = Math.floor(state.tick / 5) % 2;
-    asset = assets.bird[frame];
+
+  if (obstaculo.tipo === "cactoPequeno") {
+    asset = imagens.cacto.pequeno[obstaculo.variante];
+  } else if (obstaculo.tipo === "cactoGrande") {
+    asset = imagens.cacto.grande[obstaculo.variante];
+  } else if (obstaculo.tipo === "passaro") {
+    const quadro = Math.floor(estado.tick / 5) % 2;
+    asset = imagens.passaro[quadro];
   }
 
-  if (asset && asset.loaded) {
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(asset.image, obstacle.x, obstacle.y);
-    ctx.restore();
+  if (asset && asset.carregado) {
+    contexto.save();
+    contexto.imageSmoothingEnabled = false;
+    contexto.drawImage(asset.imagem, obstaculo.x, obstaculo.y);
+    contexto.restore();
     return;
   }
 
-  ctx.save();
-  ctx.fillStyle = "#535353";
+  contexto.save();
+  contexto.fillStyle = "#535353";
 
-  if (obstacle.kind === "bird") {
-    const flap = Math.floor(state.tick / 10) % 2;
-    ctx.fillRect(obstacle.x + 24, obstacle.y + 24, 44, 18);
-    ctx.fillRect(obstacle.x + 64, obstacle.y + 18, 18, 10);
-    ctx.fillRect(obstacle.x + 80, obstacle.y + 22, 10, 5);
-    if (flap === 0) {
-      ctx.fillRect(obstacle.x + 6, obstacle.y + 8, 34, 12);
-      ctx.fillRect(obstacle.x + 30, obstacle.y + 40, 30, 10);
+  if (obstaculo.tipo === "passaro") {
+    const batidaAsa = Math.floor(estado.tick / 10) % 2;
+    contexto.fillRect(obstaculo.x + 24, obstaculo.y + 24, 44, 18);
+    contexto.fillRect(obstaculo.x + 64, obstaculo.y + 18, 18, 10);
+    contexto.fillRect(obstaculo.x + 80, obstaculo.y + 22, 10, 5);
+
+    if (batidaAsa === 0) {
+      contexto.fillRect(obstaculo.x + 6, obstaculo.y + 8, 34, 12);
+      contexto.fillRect(obstaculo.x + 30, obstaculo.y + 40, 30, 10);
     } else {
-      ctx.fillRect(obstacle.x + 8, obstacle.y + 42, 34, 12);
-      ctx.fillRect(obstacle.x + 30, obstacle.y + 8, 30, 10);
+      contexto.fillRect(obstaculo.x + 8, obstaculo.y + 42, 34, 12);
+      contexto.fillRect(obstaculo.x + 30, obstaculo.y + 8, 30, 10);
     }
   } else {
-    const count = obstacle.type + 1;
-    const cactusWidth = obstacle.kind === "largeCactus" ? 34 : 24;
-    const cactusHeight = obstacle.height;
-    for (let i = 0; i < count; i += 1) {
-      const x = obstacle.x + i * cactusWidth;
-      ctx.fillRect(x + cactusWidth * 0.38, obstacle.y, cactusWidth * 0.28, cactusHeight);
-      ctx.fillRect(x + 1, obstacle.y + cactusHeight * 0.35, cactusWidth * 0.46, 9);
-      ctx.fillRect(x + cactusWidth * 0.55, obstacle.y + cactusHeight * 0.56, cactusWidth * 0.45, 9);
+    const quantidade = obstaculo.variante + 1;
+    const larguraCacto = obstaculo.tipo === "cactoGrande" ? 34 : 24;
+
+    for (let i = 0; i < quantidade; i += 1) {
+      const x = obstaculo.x + i * larguraCacto;
+      contexto.fillRect(x + larguraCacto * 0.38, obstaculo.y, larguraCacto * 0.28, obstaculo.altura);
+      contexto.fillRect(x + 1, obstaculo.y + obstaculo.altura * 0.35, larguraCacto * 0.46, 9);
+      contexto.fillRect(x + larguraCacto * 0.55, obstaculo.y + obstaculo.altura * 0.56, larguraCacto * 0.45, 9);
     }
   }
-  ctx.restore();
+
+  contexto.restore();
 }
 
-function drawGround() {
-  const track = assets.other.track;
-  if (track && track.loaded) {
-    for (const offset of [state.bgX, track.width + state.bgX]) {
-      ctx.drawImage(track.image, offset, CONFIG.trackY);
+function desenharPista() {
+  const pista = imagens.outros.pista;
+
+  if (pista && pista.carregado) {
+    for (const deslocamento of [estado.pistaX, pista.largura + estado.pistaX]) {
+      contexto.drawImage(pista.imagem, deslocamento, configuracao.pistaY);
     }
-    if (state.bgX <= -track.width) state.bgX = 0;
     return;
   }
 
-  ctx.strokeStyle = "#535353";
-  ctx.fillStyle = "#535353";
-  ctx.lineWidth = 2;
+  contexto.strokeStyle = "#535353";
+  contexto.fillStyle = "#535353";
+  contexto.lineWidth = 2;
 
-  for (const offset of [state.bgX, CONFIG.width + state.bgX]) {
-    ctx.beginPath();
-    ctx.moveTo(offset, CONFIG.trackY);
-    ctx.lineTo(offset + CONFIG.width, CONFIG.trackY);
-    ctx.stroke();
+  for (const deslocamento of [estado.pistaX, configuracao.largura + estado.pistaX]) {
+    contexto.beginPath();
+    contexto.moveTo(deslocamento, configuracao.pistaY);
+    contexto.lineTo(deslocamento + configuracao.largura, configuracao.pistaY);
+    contexto.stroke();
 
-    for (let x = offset + 12; x < offset + CONFIG.width; x += 72) {
-      ctx.fillRect(x, CONFIG.trackY + 18, 36, 3);
-      ctx.fillRect(x + 44, CONFIG.trackY + 38, 18, 3);
+    for (let x = deslocamento + 12; x < deslocamento + configuracao.largura; x += 72) {
+      contexto.fillRect(x, configuracao.pistaY + 18, 36, 3);
+      contexto.fillRect(x + 44, configuracao.pistaY + 38, 18, 3);
     }
   }
 }
 
-function drawClouds() {
-  const cloud = state.cloud;
-  const cloudAsset = assets.other.cloud;
-  if (cloudAsset && cloudAsset.loaded) {
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(cloudAsset.image, cloud.x, cloud.y);
-    ctx.restore();
+function desenharNuvem() {
+  const nuvem = estado.nuvem;
+  const assetNuvem = imagens.outros.nuvem;
+
+  if (assetNuvem && assetNuvem.carregado) {
+    contexto.save();
+    contexto.imageSmoothingEnabled = false;
+    contexto.drawImage(assetNuvem.imagem, nuvem.x, nuvem.y);
+    contexto.restore();
     return;
   }
 
-  ctx.fillStyle = "#cfd4d1";
-  ctx.beginPath();
-  ctx.arc(cloud.x, cloud.y + 18, 18, 0, Math.PI * 2);
-  ctx.arc(cloud.x + 24, cloud.y + 8, 26, 0, Math.PI * 2);
-  ctx.arc(cloud.x + 54, cloud.y + 18, 18, 0, Math.PI * 2);
-  ctx.fillRect(cloud.x, cloud.y + 18, 72, 20);
-  ctx.fill();
+  contexto.fillStyle = "#cfd4d1";
+  contexto.beginPath();
+  contexto.arc(nuvem.x, nuvem.y + 18, 18, 0, Math.PI * 2);
+  contexto.arc(nuvem.x + 24, nuvem.y + 8, 26, 0, Math.PI * 2);
+  contexto.arc(nuvem.x + 54, nuvem.y + 18, 18, 0, Math.PI * 2);
+  contexto.fillRect(nuvem.x, nuvem.y + 18, 72, 20);
+  contexto.fill();
 }
 
-function draw() {
-  ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
-
-  drawClouds();
-  drawGround();
-
-  for (const obstacle of state.obstacles) {
-    drawObstacle(obstacle);
+function desenharHitboxes() {
+  contexto.strokeStyle = "red";
+  for (const caixa of obterCaixasDino()) {
+    contexto.strokeRect(caixa.x, caixa.y, caixa.largura, caixa.altura);
   }
 
-  drawDino();
-
-  if (!state.alive) {
-    ctx.fillStyle = "rgba(177, 58, 50, 0.12)";
-    ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
-
-    const gameOver = assets.other.gameOver;
-
-    if (gameOver && gameOver.loaded) {
-      ctx.drawImage(
-        gameOver.image,
-        (CONFIG.width - gameOver.width) / 2,
-        210
-      );
-    }
-
-    // LINHAS DA HITBOXES DO DINOSSAURO, RETIRAR DEPOIS, COR VERMELHA
-    const dinoBoxes = getDinoBox();
-
-    ctx.strokeStyle = "red";
-
-    for (const box of dinoBoxes) {
-      ctx.strokeRect(
-        box.x,
-        box.y,
-        box.width,
-        box.height
-      );
-    }
-
-    // LINHA DAS HITBOXES DOS OBSTACULOS, TIRAR DEPOIS, COR AZUL
-    for (const obstacle of state.obstacles) {
-      const box = getObstacleBox(obstacle);
-
-      ctx.strokeStyle = "blue";
-
-      ctx.strokeRect(
-        box.x,
-        box.y,
-        box.width,
-        box.height
-      );
-    }
+  contexto.strokeStyle = "blue";
+  for (const obstaculo of estado.obstaculos) {
+    const caixa = obterCaixaObstaculo(obstaculo);
+    contexto.strokeRect(caixa.x, caixa.y, caixa.largura, caixa.altura);
   }
 }
 
-function updateUi() {
-  ui.score.textContent = String(Math.floor(state.score));
-  ui.best.textContent = String(bestScore);
-  ui.speed.textContent = state.speed.toFixed(1);
-  ui.stepRateValue.textContent = ui.stepRate.value;
-  ui.stateView.textContent = JSON.stringify(getState(), null, 2);
+function desenhar() {
+  contexto.clearRect(0, 0, configuracao.largura, configuracao.altura);
+  contexto.fillStyle = "#ffffff";
+  contexto.fillRect(0, 0, configuracao.largura, configuracao.altura);
+
+  desenharNuvem();
+  desenharPista();
+
+  for (const obstaculo of estado.obstaculos) {
+    desenharObstaculo(obstaculo);
+  }
+
+  desenharDino();
+
+  if (!estado.vivo) {
+    contexto.fillStyle = "rgba(177, 58, 50, 0.12)";
+    contexto.fillRect(0, 0, configuracao.largura, configuracao.altura);
+
+    const fimDeJogo = imagens.outros.fimDeJogo;
+    if (fimDeJogo && fimDeJogo.carregado) {
+      contexto.drawImage(fimDeJogo.imagem, (configuracao.largura - fimDeJogo.largura) / 2, 210);
+    }
+
+    desenharHitboxes();
+  }
 }
 
-function manualAction() {
-  if (keys.has("KeyS") || keys.has("ArrowDown")) return ACTION.DUCK;
-  if (keys.has("Space") || keys.has("KeyW") || keys.has("ArrowUp")) return ACTION.JUMP;
-  return ACTION.NONE;
+function atualizarInterface() {
+  interfaceUsuario.pontuacao.textContent = String(Math.floor(estado.pontuacao));
+  interfaceUsuario.recorde.textContent = String(recorde);
+  interfaceUsuario.velocidade.textContent = estado.velocidade.toFixed(1);
+  interfaceUsuario.valorPassosPorQuadro.textContent = interfaceUsuario.passosPorQuadro.value;
+  interfaceUsuario.visualizacaoEstado.textContent = JSON.stringify(obterEstado(), null, 2);
 }
 
-function frame(time) {
-  if (!running) return;
-  if (!lastFrame) lastFrame = time;
-  const steps = Number(ui.stepRate.value);
+function acaoManual() {
+  if (teclasPressionadas.has("KeyS") || teclasPressionadas.has("ArrowDown")) return acao.abaixar;
+  if (teclasPressionadas.has("Space") || teclasPressionadas.has("KeyW") || teclasPressionadas.has("ArrowUp")) return acao.pular;
+  return acao.nada;
+}
 
-  for (let i = 0; i < steps; i += 1) {
-    const input = ui.aiToggle.checked && aiAgent ? aiAgent(getState()) : manualAction();
-    const result = step(input);
-    if (result.done) {
-      running = false;
+function quadro(tempo) {
+  if (!jogoRodando) return;
+  if (!ultimoQuadro) ultimoQuadro = tempo;
+
+  const passos = Number(interfaceUsuario.passosPorQuadro.value);
+
+  for (let i = 0; i < passos; i += 1) {
+    const entrada = interfaceUsuario.alternarIa.checked && agenteIa ? agenteIa(obterEstado()) : acaoManual();
+    const resultado = passo(entrada);
+
+    if (resultado.finalizado) {
+      jogoRodando = false;
       break;
     }
   }
 
-  lastFrame = time;
-  if (running) requestAnimationFrame(frame);
+  ultimoQuadro = tempo;
+  if (jogoRodando) requestAnimationFrame(quadro);
 }
 
-function play() {
-  if (!state.alive) reset();
-  if (running) return;
-  running = true;
-  ui.overlay.hidden = true;
-  requestAnimationFrame(frame);
+function iniciar() {
+  if (!estado.vivo) reiniciar();
+  if (jogoRodando) return;
+  jogoRodando = true;
+  interfaceUsuario.sobreposicao.hidden = true;
+  requestAnimationFrame(quadro);
 }
 
-function pause() {
-  running = false;
-  ui.overlay.hidden = false;
-  ui.overlay.querySelector("strong").textContent = "Pausado";
+function pausar() {
+  jogoRodando = false;
+  interfaceUsuario.sobreposicao.hidden = false;
+  interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Pausado";
 }
 
-function setAgent(agent) {
-  aiAgent = typeof agent === "function" ? agent : null;
-  ui.aiToggle.checked = Boolean(aiAgent);
+function definirAgente(agente) {
+  agenteIa = typeof agente === "function" ? agente : null;
+  interfaceUsuario.alternarIa.checked = Boolean(agenteIa);
 }
 
-function relu(value) {
-  return Math.max(0, value);
+function relu(valor) {
+  return Math.max(0, valor);
 }
 
-function dotVectorMatrix(vector, matrix) {
-  return matrix[0].map((_, column) => {
-    return vector.reduce((sum, value, row) => sum + value * matrix[row][column], 0);
-  });
+function produtoVetorMatriz(vetor, matriz) {
+  return matriz[0].map((_, coluna) => vetor.reduce((soma, valor, linha) => soma + valor * matriz[linha][coluna], 0));
 }
 
-function addVectors(a, b) {
-  return a.map((value, index) => value + b[index]);
+function somarVetores(vetorA, vetorB) {
+  return vetorA.map((valor, indice) => valor + vetorB[indice]);
 }
 
-function obstacleTypeCode(type) {
-  if (type === "smallCactus") return 0;
-  if (type === "largeCactus") return 0.5;
-  if (type === "bird") return 1;
+function codigoTipoObstaculo(tipo) {
+  if (tipo === "cactoPequeno") return 0;
+  if (tipo === "cactoGrande") return 0.5;
+  if (tipo === "passaro") return 1;
   return 0;
 }
 
-function buildNumpyInputs(gameState) {
+function montarEntradasNumpy(estadoJogo) {
   return [
-    gameState.obstacleDistance === null ? 1 : Math.max(0, Math.min(gameState.obstacleDistance / CONFIG.width, 1)),
-    gameState.obstacleWidth / 160,
-    gameState.obstacleHeight / 120,
-    gameState.obstacleY / CONFIG.height,
-    gameState.speed / 12,
-    gameState.dinoY / 160,
-    gameState.dinoVelocityY / CONFIG.jumpVelocity,
-    gameState.grounded ? 1 : 0,
-    gameState.ducking ? 1 : 0,
-    obstacleTypeCode(gameState.obstacleType),
+    estadoJogo.distanciaObstaculo === null ? 1 : Math.max(0, Math.min(estadoJogo.distanciaObstaculo / configuracao.largura, 1)),
+    estadoJogo.larguraObstaculo / 160,
+    estadoJogo.alturaObstaculo / 120,
+    estadoJogo.obstaculoY / configuracao.altura,
+    estadoJogo.velocidade / 12,
+    estadoJogo.dinoY / 160,
+    estadoJogo.velocidadeVerticalDino / configuracao.velocidadePulo,
+    estadoJogo.noChao ? 1 : 0,
+    estadoJogo.abaixado ? 1 : 0,
+    codigoTipoObstaculo(estadoJogo.tipoObstaculo),
   ];
 }
 
-function createNumpyAgent(brain) {
-  return (gameState) => {
-    const inputs = buildNumpyInputs(gameState);
-    const hiddenRaw = addVectors(dotVectorMatrix(inputs, brain.w1), brain.b1);
-    const hidden = hiddenRaw.map(relu);
-    const output = addVectors(dotVectorMatrix(hidden, brain.w2), brain.b2);
-    let bestIndex = 0;
+function criarAgenteNumpy(cerebro) {
+  return (estadoJogo) => {
+    const entradas = montarEntradasNumpy(estadoJogo);
+    const camadaOcultaBruta = somarVetores(produtoVetorMatriz(entradas, cerebro.pesosEntradaOculta), cerebro.biasOculta);
+    const camadaOculta = camadaOcultaBruta.map(relu);
+    const saida = somarVetores(produtoVetorMatriz(camadaOculta, cerebro.pesosOcultaSaida), cerebro.biasSaida);
+    let melhorIndice = 0;
 
-    for (let i = 1; i < output.length; i += 1) {
-      if (output[i] > output[bestIndex]) bestIndex = i;
+    for (let i = 1; i < saida.length; i += 1) {
+      if (saida[i] > saida[melhorIndice]) melhorIndice = i;
     }
 
-    return bestIndex;
+    return melhorIndice;
   };
 }
 
-async function loadNumpyBrain(path = "dino_brain.json") {
-  const response = await fetch(path);
-  if (!response.ok) {
-    throw new Error(`Nao foi possivel carregar ${path}`);
-  }
+async function carregarCerebroNumpy(caminho = "cerebro_dino.json") {
+  const resposta = await fetch(caminho);
+  if (!resposta.ok) throw new Error(`Nao foi possivel carregar ${caminho}`);
 
-  const brain = await response.json();
-  setAgent(createNumpyAgent(brain));
-  ui.overlay.hidden = false;
-  ui.overlay.querySelector("strong").textContent = "IA NumPy carregada";
-  return brain;
+  const cerebro = await resposta.json();
+  definirAgente(criarAgenteNumpy(cerebro));
+  interfaceUsuario.sobreposicao.hidden = false;
+  interfaceUsuario.sobreposicao.querySelector("strong").textContent = "IA NumPy carregada";
+  return cerebro;
 }
 
-function runEpisode(agent, maxSteps = 5000) {
-  reset();
-  let totalReward = 0;
-  let result = { state: getState(), reward: 0, done: false };
+function rodarEpisodio(agente, maximoPassos = 5000) {
+  reiniciar();
+  let recompensaTotal = 0;
+  let resultado = { estado: obterEstado(), recompensa: 0, finalizado: false };
 
-  for (let i = 0; i < maxSteps && !result.done; i += 1) {
-    const action = typeof agent === "function" ? agent(getState()) : ACTION.NONE;
-    result = step(action, { render: false });
-    totalReward += result.reward;
+  for (let i = 0; i < maximoPassos && !resultado.finalizado; i += 1) {
+    const acaoEscolhida = typeof agente === "function" ? agente(obterEstado()) : acao.nada;
+    resultado = passo(acaoEscolhida, { desenhar: false });
+    recompensaTotal += resultado.recompensa;
   }
 
-  updateUi();
-  draw();
+  atualizarInterface();
+  desenhar();
   return {
-    score: Math.floor(state.score),
-    totalReward: Number(totalReward.toFixed(4)),
-    steps: state.tick,
-    done: result.done,
-    state: getState(),
+    pontuacao: Math.floor(estado.pontuacao),
+    recompensaTotal: Number(recompensaTotal.toFixed(4)),
+    passos: estado.tick,
+    finalizado: resultado.finalizado,
+    estado: obterEstado(),
   };
 }
 
-document.addEventListener("keydown", (event) => {
-  keys.add(event.code);
-  if (event.code === "Space") event.preventDefault();
-  if (event.code === "KeyR") reset();
-  if (event.code === "KeyP") pause();
-  if (event.code === "KeyU") play();
+document.addEventListener("keydown", (evento) => {
+  teclasPressionadas.add(evento.code);
+  if (evento.code === "Space") evento.preventDefault();
+  if (evento.code === "KeyR") reiniciar();
+  if (evento.code === "KeyP") pausar();
+  if (evento.code === "KeyU") iniciar();
 });
 
-document.addEventListener("keyup", (event) => {
-  keys.delete(event.code);
+document.addEventListener("keyup", (evento) => {
+  teclasPressionadas.delete(evento.code);
 });
 
-ui.startBtn.addEventListener("click", play);
-ui.pauseBtn.addEventListener("click", pause);
-ui.resetBtn.addEventListener("click", () => {
-  running = false;
-  reset();
+interfaceUsuario.botaoIniciar.addEventListener("click", iniciar);
+interfaceUsuario.botaoPausar.addEventListener("click", pausar);
+interfaceUsuario.botaoReiniciar.addEventListener("click", () => {
+  jogoRodando = false;
+  reiniciar();
 });
-ui.stepRate.addEventListener("input", updateUi);
+interfaceUsuario.passosPorQuadro.addEventListener("input", atualizarInterface);
 
 window.DinoEnv = {
-  ACTION,
-  reset,
-  step,
-  getState,
-  play,
-  pause,
-  setAgent,
-  loadNumpyBrain,
-  runEpisode,
+  acao,
+  reiniciar,
+  passo,
+  obterEstado,
+  iniciar,
+  pausar,
+  definirAgente,
+  carregarCerebroNumpy,
+  rodarEpisodio,
 };
 
-reset();
+reiniciar();

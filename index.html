@@ -7,69 +7,69 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <main class="app">
-      <section class="hud" aria-label="Painel do jogo">
+    <main class="aplicacao">
+      <section class="painel" aria-label="Painel do jogo">
         <div>
-          <p class="eyebrow">Projeto de algoritmo genetico</p>
+          <p class="rotulo">Projeto de algoritmo genetico</p>
           <h1>Dino Runner IA</h1>
         </div>
 
-        <div class="stats">
+        <div class="estatisticas">
           <div>
             <span>Pontos</span>
-            <strong id="score">0</strong>
+            <strong id="pontuacao">0</strong>
           </div>
           <div>
             <span>Recorde</span>
-            <strong id="best">0</strong>
+            <strong id="recorde">0</strong>
           </div>
           <div>
             <span>Velocidade</span>
-            <strong id="speed">0</strong>
+            <strong id="velocidade">0</strong>
           </div>
         </div>
       </section>
 
-      <section class="game-shell">
-        <canvas id="game" width="1100" height="600" aria-label="Jogo do dinossauro"></canvas>
-        <div class="overlay" id="overlay">
+      <section class="area-jogo">
+        <canvas id="jogo" width="1100" height="600" aria-label="Jogo do dinossauro"></canvas>
+        <div class="sobreposicao" id="sobreposicao">
           <strong>Dino pronto</strong>
           <span>Espaco/W: pular | S: abaixar | P: pausar | U: voltar | R: reiniciar</span>
         </div>
       </section>
 
-      <section class="controls" aria-label="Controles">
-        <button id="startBtn" type="button">Iniciar</button>
-        <button id="pauseBtn" type="button">Pausar</button>
-        <button id="resetBtn" type="button">Reiniciar</button>
+      <section class="controles" aria-label="Controles">
+        <button id="botaoIniciar" type="button">Iniciar</button>
+        <button id="botaoPausar" type="button">Pausar</button>
+        <button id="botaoReiniciar" type="button">Reiniciar</button>
 
-        <label class="toggle">
-          <input id="aiToggle" type="checkbox" />
+        <label class="alternador">
+          <input id="alternarIa" type="checkbox" />
           <span>Usar agente IA</span>
         </label>
 
-        <label class="range">
+        <label class="intervalo">
           <span>Passos por quadro</span>
-          <input id="stepRate" type="range" min="1" max="8" value="1" />
-          <strong id="stepRateValue">1</strong>
+          <input id="passosPorQuadro" type="range" min="1" max="8" value="1" />
+          <strong id="valorPassosPorQuadro">1</strong>
         </label>
       </section>
 
-      <section class="data-panel" aria-label="Estado da simulacao">
+      <section class="painel-dados" aria-label="Estado da simulacao">
         <div>
           <h2>Entrada para a rede</h2>
-          <pre id="stateView">{}</pre>
+          <pre id="visualizacaoEstado">{}</pre>
         </div>
         <div>
           <h2>API rapida</h2>
-          <pre>window.DinoEnv.reset()
-window.DinoEnv.step(1) // 0 nada, 1 pula, 2 abaixa
-window.DinoEnv.getState()
-window.DinoEnv.loadNumpyBrain("dino_brain.json")</pre>
+          <pre>window.DinoEnv.reiniciar()
+window.DinoEnv.passo(1) // 0 nada, 1 pula, 2 abaixa
+window.DinoEnv.obterEstado()
+window.DinoEnv.carregarCerebroNumpy("cerebro_dino.json")</pre>
         </div>
       </section>
     </main>
 
-    <script src="game.js?v=8"></script>
+    <script src="game.js?v=9"></script>
   </body>
 </html>
