@@ -6,6 +6,18 @@ Jogo simples inspirado no dinossauro do Chrome, feito em HTML, CSS e JavaScript 
 
 Abra `index.html` no navegador.
 
+Para carregar o cerebro treinado em Python (`dino_brain.json`), prefira abrir com servidor local:
+
+```bash
+python -m http.server 8000
+```
+
+Depois acesse:
+
+```text
+http://127.0.0.1:8000/index.html
+```
+
 Os sprites ficam em `Sprites/`, seguindo a estrutura do projeto Pygame:
 
 - `Sprites/Dino/DinoStart.png`
@@ -35,6 +47,37 @@ DinoEnv.step(1); // pula
 DinoEnv.step(2); // abaixa
 DinoEnv.getState();
 ```
+
+## Treino com NumPy
+
+O arquivo `train_numpy_ai.py` treina uma rede neural simples usando NumPy e algoritmo genetico. Ele nao altera o jogo durante o treino; apenas gera o arquivo `dino_brain.json`.
+
+Instale o NumPy se ainda nao tiver:
+
+```bash
+pip install numpy
+```
+
+Depois rode:
+
+```bash
+python train_numpy_ai.py
+```
+
+Quando terminar, ele salva a melhor rede em:
+
+```text
+dino_brain.json
+```
+
+Para usar essa rede no jogo, abra o console do navegador e execute:
+
+```js
+await DinoEnv.loadNumpyBrain("dino_brain.json");
+DinoEnv.play();
+```
+
+Isso carrega os pesos treinados no Python, transforma a rede em um agente JavaScript e marca automaticamente `Usar agente IA`.
 
 Tambem da para plugar um agente:
 

@@ -188,14 +188,14 @@ function reset() {
     tick: 0,
     score: 0,
     alive: true,
-    speed: CONFIG.baseSpeed,
+    speed: CONFIG.velocidadeBase,
     bgX: 0,
     dino: {
       x: CONFIG.dinoX,
       y: CONFIG.dinoRunY,
       width: 88,
       height: 94,
-      jumpVel: CONFIG.jumpVelocity,
+      jumpVel: CONFIG.VelocidadePulo,
       grounded: true,
       ducking: false,
       jumping: false,
@@ -626,6 +626,71 @@ function setAgent(agent) {
   ui.aiToggle.checked = Boolean(aiAgent);
 }
 
+function relu(value) {
+  return Math.max(0, value);
+}
+
+function dotVectorMatrix(vector, matrix) {
+  return matrix[0].map((_, column) => {
+    return vector.reduce((sum, value, row) => sum + value * matrix[row][column], 0);
+  });
+}
+
+function addVectors(a, b) {
+  return a.map((value, index) => value + b[index]);
+}
+
+function obstacleTypeCode(type) {
+  if (type === "smallCactus") return 0;
+  if (type === "largeCactus") return 0.5;
+  if (type === "bird") return 1;
+  return 0;
+}
+
+function buildNumpyInputs(gameState) {
+  return [
+    gameState.obstacleDistance === null ? 1 : Math.max(0, Math.min(gameState.obstacleDistance / CONFIG.width, 1)),
+    gameState.obstacleWidth / 160,
+    gameState.obstacleHeight / 120,
+    gameState.obstacleY / CONFIG.height,
+    gameState.speed / 12,
+    gameState.dinoY / 160,
+    gameState.dinoVelocityY / CONFIG.jumpVelocity,
+    gameState.grounded ? 1 : 0,
+    gameState.ducking ? 1 : 0,
+    obstacleTypeCode(gameState.obstacleType),
+  ];
+}
+
+function createNumpyAgent(brain) {
+  return (gameState) => {
+    const inputs = buildNumpyInputs(gameState);
+    const hiddenRaw = addVectors(dotVectorMatrix(inputs, brain.w1), brain.b1);
+    const hidden = hiddenRaw.map(relu);
+    const output = addVectors(dotVectorMatrix(hidden, brain.w2), brain.b2);
+    let bestIndex = 0;
+
+    for (let i = 1; i < output.length; i += 1) {
+      if (output[i] > output[bestIndex]) bestIndex = i;
+    }
+
+    return bestIndex;
+  };
+}
+
+async function loadNumpyBrain(path = "dino_brain.json") {
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`Nao foi possivel carregar ${path}`);
+  }
+
+  const brain = await response.json();
+  setAgent(createNumpyAgent(brain));
+  ui.overlay.hidden = false;
+  ui.overlay.querySelector("strong").textContent = "IA NumPy carregada";
+  return brain;
+}
+
 function runEpisode(agent, maxSteps = 5000) {
   reset();
   let totalReward = 0;
@@ -676,6 +741,7 @@ window.DinoEnv = {
   play,
   pause,
   setAgent,
+  loadNumpyBrain,
   runEpisode,
 };
 
