@@ -118,8 +118,8 @@ let modoTreino = false;
 let geracaoAtual = 1;
 let recorde = Number(localStorage.getItem("dino-recorde") || 0);
 let melhorPontuacaoGeracao = 0;
-let melhorCerebroHistorico = carregarMelhorDinoLocal();
-let melhorAptidaoHistorica = Number(localStorage.getItem("dino-melhor-aptidao") || 0);
+let melhorCerebroHistorico = null;
+let melhorAptidaoHistorica = 0;
 let cerebroBaseTreino = null;
 let historicoGeracoes = [];
 let proximoIdObstaculo = 1;
@@ -179,24 +179,6 @@ function marcarIaAtivada(ativada) {
   if (interfaceUsuario.alternarIa) {
     interfaceUsuario.alternarIa.checked = ativada;
   }
-}
-
-function carregarMelhorDinoLocal() {
-  try {
-    const textoSalvo = localStorage.getItem("dino-melhor-cerebro");
-    return textoSalvo ? JSON.parse(textoSalvo) : null;
-  } catch (_erro) {
-    localStorage.removeItem("dino-melhor-cerebro");
-    localStorage.removeItem("dino-melhor-aptidao");
-    localStorage.removeItem("dino-melhor-pontuacao");
-    return null;
-  }
-}
-
-function salvarMelhorDinoLocal(cerebro, aptidao, pontuacao) {
-  localStorage.setItem("dino-melhor-cerebro", JSON.stringify(cerebro));
-  localStorage.setItem("dino-melhor-aptidao", String(aptidao));
-  localStorage.setItem("dino-melhor-pontuacao", String(Math.floor(pontuacao)));
 }
 
 function tamanhoAsset(asset, larguraPadrao, alturaPadrao) {
@@ -355,8 +337,7 @@ function criarObstaculo() {
     return { id: proximoIdObstaculo++, tipo: "passaro", variante: 0, x: configuracao.largura, y: escolherAleatorio([250, 290, 320]), largura: tamanho.largura, altura: tamanho.altura, passou: false };
   }
 
-  // Cano vindo de cima: termina baixo o suficiente para bater no dino em pe,
-  // mas ainda deixa uma fresta para o dino abaixado passar por baixo.
+  // Cano vindo de cima: o dino em pe bate, mas o dino abaixado passa por baixo.
   return { id: proximoIdObstaculo++, tipo: "cano", variante: 0, x: configuracao.largura, y: 0, largura: 86, altura: 354, passou: false };
 }
 
@@ -400,14 +381,8 @@ async function tentarCarregarCerebroBase() {
     const resposta = await fetch("cerebro_dino.json", { cache: "no-store" });
     if (!resposta.ok) return null;
     cerebroBaseTreino = await resposta.json();
-    const aptidaoBase = Number(cerebroBaseTreino.aptidao || cerebroBaseTreino.pontuacao || 0);
-
-    if (!melhorCerebroHistorico || aptidaoBase > melhorAptidaoHistorica) {
-      melhorCerebroHistorico = clonarCerebro(cerebroBaseTreino);
-      melhorAptidaoHistorica = aptidaoBase;
-      salvarMelhorDinoLocal(melhorCerebroHistorico, melhorAptidaoHistorica, cerebroBaseTreino.pontuacao || 0);
-    }
-
+    melhorCerebroHistorico = clonarCerebro(cerebroBaseTreino);
+    melhorAptidaoHistorica = Number(cerebroBaseTreino.pontuacao || 0);
     return cerebroBaseTreino;
   } catch (_erro) {
     return null;
@@ -769,7 +744,6 @@ function criarProximaGeracao() {
   if (campeao.aptidao > melhorAptidaoHistorica) {
     melhorAptidaoHistorica = campeao.aptidao;
     melhorCerebroHistorico = clonarCerebro(campeao.cerebro);
-    salvarMelhorDinoLocal(melhorCerebroHistorico, melhorAptidaoHistorica, campeao.pontuacao);
   }
 
   const novosCerebros = [];
@@ -822,10 +796,44 @@ function pintarSpriteDino(dino) {
   contexto.globalCompositeOperation = "source-over";
 }
 
+// Desenho simples usado caso algum sprite nao carregue.
+function desenharDinoFallback(dino) {
+  const pe = Math.floor(estado.tick / 7) % 2;
+  const cor = modoTreino ? dino.cor : "#535353";
+
+  contexto.save();
+  contexto.fillStyle = cor;
+  contexto.globalAlpha = modoTreino ? 0.82 : 1;
+
+  if (dino.abaixado && dino.noChao) {
+    const y = configuracao.pistaY - 40;
+    contexto.fillRect(dino.x + 8, y + 14, 58, 22);
+    contexto.fillRect(dino.x + 48, y + 2, 28, 24);
+    contexto.fillRect(dino.x + 72, y + 12, 14, 8);
+  } else {
+    const x = dino.x;
+    const y = dino.y;
+    contexto.fillRect(x + 18, y + 18, 33, 42);
+    contexto.fillRect(x + 39, y + 2, 35, 30);
+    contexto.fillRect(x + 69, y + 14, 12, 8);
+    contexto.fillRect(x + 23, y + 58, 9, 17);
+    contexto.fillRect(x + 42, y + 58, 9, 17);
+
+    if (dino.noChao && pe === 0) {
+      contexto.fillRect(x + 18, y + 72, 20, 6);
+    } else {
+      contexto.fillRect(x + 38, y + 72, 22, 6);
+    }
+  }
+
+  contexto.restore();
+}
+
 // Desenha um dino se ele ainda estiver vivo.
 function desenharDino(dino) {
   if (!dino.vivo) return;
-  desenharSpriteDino(dino);
+  if (desenharSpriteDino(dino)) return;
+  desenharDinoFallback(dino);
 }
 
 // Desenha cactos e passaros, usando sprites quando disponiveis.
@@ -842,8 +850,6 @@ function desenharObstaculo(obstaculo) {
     contexto.fillStyle = "#d4d4d4";
     contexto.fillRect(obstaculo.x, obstaculo.altura - 28, obstaculo.largura, 28);
     contexto.strokeRect(obstaculo.x, obstaculo.altura - 28, obstaculo.largura, 28);
-    contexto.fillStyle = "rgba(0, 0, 0, 0.08)";
-    contexto.fillRect(obstaculo.x + 24, obstaculo.y + 8, 10, obstaculo.altura - 48);
     contexto.restore();
     return;
   }
