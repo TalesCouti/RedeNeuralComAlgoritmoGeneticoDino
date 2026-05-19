@@ -11,7 +11,7 @@
       <section class="painel" aria-label="Painel do jogo">
         <div>
           <p class="rotulo">Projeto de algoritmo genetico</p>
-          <h1>Dino Runner IA</h1>
+          <h1>Dino Runner AG</h1>
         </div>
 
         <div class="estatisticas">
@@ -27,11 +27,23 @@
             <span>Velocidade</span>
             <strong id="velocidade">0</strong>
           </div>
+          <div>
+            <span>Geracao</span>
+            <strong id="geracao">1</strong>
+          </div>
+          <div>
+            <span>Vivos</span>
+            <strong id="vivos">1/1</strong>
+          </div>
+          <div>
+            <span>Melhor geracao</span>
+            <strong id="melhorGeracao">0</strong>
+          </div>
         </div>
       </section>
 
       <section class="area-jogo">
-        <canvas id="jogo" width="1100" height="600" aria-label="Jogo do dinossauro"></canvas>
+        <canvas id="jogo" width="1100" height="600" aria-label="Dino game"></canvas>
         <div class="sobreposicao" id="sobreposicao">
           <strong>Dino pronto</strong>
           <span>Espaco/W: pular | S: abaixar | P: pausar | U: voltar | R: reiniciar</span>
@@ -40,19 +52,19 @@
 
       <section class="controles" aria-label="Controles">
         <button id="botaoIniciar" type="button">Iniciar</button>
+        <button id="botaoTreinar" type="button">Treinar</button>
         <button id="botaoPausar" type="button">Pausar</button>
         <button id="botaoReiniciar" type="button">Reiniciar</button>
-
-        <label class="alternador">
-          <input id="alternarIa" type="checkbox" />
-          <span>Usar agente IA</span>
-        </label>
-
         <label class="intervalo">
           <span>Passos por quadro</span>
-          <input id="passosPorQuadro" type="range" min="1" max="8" value="1" />
+          <input id="passosPorQuadro" type="range" min="1" max="80" value="12" />
           <strong id="valorPassosPorQuadro">1</strong>
         </label>
+      </section>
+
+      <section class="painel-grafico" aria-label="Grafico de pontuacao por geracao">
+        <h2>Pontuacao por geracao</h2>
+        <canvas id="graficoPontuacao" width="1100" height="260" aria-label="Grafico de melhor pontuacao por geracao"></canvas>
       </section>
 
       <section class="painel-dados" aria-label="Estado da simulacao">
@@ -65,11 +77,11 @@
           <pre>window.DinoEnv.reiniciar()
 window.DinoEnv.passo(1) // 0 nada, 1 pula, 2 abaixa
 window.DinoEnv.obterEstado()
-window.DinoEnv.carregarCerebroNumpy("cerebro_dino.json")</pre>
+window.DinoEnv.iniciarTreino()</pre>
         </div>
       </section>
     </main>
 
-    <script src="game.js?v=9"></script>
+    <script src="game.js?v=10"></script>
   </body>
 </html>

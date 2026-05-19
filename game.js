@@ -1,15 +1,23 @@
 "use strict";
 
+// Canvas principal do jogo e canvas separado usado para o grafico de treino.
 const tela = document.querySelector("#jogo");
 const contexto = tela.getContext("2d");
+const telaGrafico = document.querySelector("#graficoPontuacao");
+const contextoGrafico = telaGrafico.getContext("2d");
 
+// Referencias para todos os elementos HTML que o JavaScript atualiza ou escuta.
 const interfaceUsuario = {
   pontuacao: document.querySelector("#pontuacao"),
   recorde: document.querySelector("#recorde"),
   velocidade: document.querySelector("#velocidade"),
+  geracao: document.querySelector("#geracao"),
+  vivos: document.querySelector("#vivos"),
+  melhorGeracao: document.querySelector("#melhorGeracao"),
   sobreposicao: document.querySelector("#sobreposicao"),
   visualizacaoEstado: document.querySelector("#visualizacaoEstado"),
   botaoIniciar: document.querySelector("#botaoIniciar"),
+  botaoTreinar: document.querySelector("#botaoTreinar"),
   botaoPausar: document.querySelector("#botaoPausar"),
   botaoReiniciar: document.querySelector("#botaoReiniciar"),
   alternarIa: document.querySelector("#alternarIa"),
@@ -17,6 +25,8 @@ const interfaceUsuario = {
   valorPassosPorQuadro: document.querySelector("#valorPassosPorQuadro"),
 };
 
+// Valores centrais do jogo e do algoritmo genetico.
+// Mudar esses numeros altera fisica, velocidade, tamanho da populacao e rede neural.
 const configuracao = {
   largura: 1100,
   altura: 600,
@@ -28,14 +38,39 @@ const configuracao = {
   decaimentoPulo: 0.1,
   escalaPulo: 1,
   velocidadeBase: 3,
+  tamanhoPopulacao: 180,
+  quantidadeElite: 12,
+  taxaMutacao: 0.08,
+  forcaMutacao: 0.12,
+  quantidadeEntradas: 10,
+  quantidadeNeuroniosOcultos: 32,
+  quantidadeSaidas: 3,
 };
 
+// A rede neural sempre devolve um destes tres numeros.
 const acao = {
   nada: 0,
   pular: 1,
   abaixar: 2,
 };
 
+// Paleta usada para pintar cada dino de uma cor diferente durante o treino.
+const coresDinos = [
+  "#e11d48",
+  "#f97316",
+  "#facc15",
+  "#22c55e",
+  "#14b8a6",
+  "#06b6d4",
+  "#2563eb",
+  "#7c3aed",
+  "#c026d3",
+  "#ec4899",
+  "#64748b",
+  "#84cc16",
+];
+
+// Caminhos dos sprites originais. Os arquivos PNG nao sao alterados pelo codigo.
 const fontesAssets = {
   dino: {
     parado: "Sprites/Dino/DinoStart.png",
@@ -65,34 +100,31 @@ const fontesAssets = {
   },
 };
 
+// Depois de carregar, cada imagem fica guardada aqui com largura/altura reais.
 const imagens = {
-  dino: {
-    parado: null,
-    correndo: [],
-    pulando: null,
-    abaixado: [],
-    morto: null,
-  },
-  cacto: {
-    pequeno: [],
-    grande: [],
-  },
+  dino: { parado: null, correndo: [], pulando: null, abaixado: [], morto: null },
+  cacto: { pequeno: [], grande: [] },
   passaro: [],
-  outros: {
-    nuvem: null,
-    pista: null,
-    fimDeJogo: null,
-    reiniciar: null,
-  },
+  outros: { nuvem: null, pista: null, fimDeJogo: null, reiniciar: null },
 };
 
+// Estado global da simulacao. O jogo pode estar em modo normal ou em modo treino.
 let estado;
 let teclasPressionadas = new Set();
 let jogoRodando = false;
 let ultimoQuadro = 0;
 let agenteIa = null;
-let recorde = Number(localStorage.getItem("dino-recorde") || localStorage.getItem("dino-best") || 0);
+let modoTreino = false;
+let geracaoAtual = 1;
+let recorde = Number(localStorage.getItem("dino-recorde") || 0);
+let melhorPontuacaoGeracao = 0;
+let melhorCerebroHistorico = carregarMelhorDinoLocal();
+let melhorAptidaoHistorica = Number(localStorage.getItem("dino-melhor-aptidao") || 0);
+let cerebroBaseTreino = null;
+let historicoGeracoes = [];
+let proximoIdObstaculo = 1;
 
+// Carrega uma imagem e guarda se ela ja esta pronta para ser desenhada.
 function carregarImagem(caminho) {
   const imagem = new Image();
   const asset = { carregado: false, imagem, largura: 0, altura: 0 };
@@ -104,10 +136,7 @@ function carregarImagem(caminho) {
     if (estado) desenhar();
   });
 
-  imagem.addEventListener("error", () => {
-    console.warn(`Nao foi possivel carregar o asset: ${caminho}`);
-  });
-
+  imagem.addEventListener("error", () => console.warn(`Nao foi possivel carregar o asset: ${caminho}`));
   imagem.src = caminho;
   return asset;
 }
@@ -125,12 +154,49 @@ imagens.outros.pista = carregarImagem(fontesAssets.outros.pista);
 imagens.outros.fimDeJogo = carregarImagem(fontesAssets.outros.fimDeJogo);
 imagens.outros.reiniciar = carregarImagem(fontesAssets.outros.reiniciar);
 
+// Utilitarios pequenos para gerar aleatoriedade usada no jogo e no algoritmo genetico.
 function aleatorioEntre(minimo, maximo) {
   return Math.random() * (maximo - minimo) + minimo;
 }
 
+function inteiroAleatorio(minimo, maximo) {
+  return Math.floor(aleatorioEntre(minimo, maximo + 1));
+}
+
 function escolherAleatorio(itens) {
   return itens[Math.floor(Math.random() * itens.length)];
+}
+
+function limitar(valor, minimo, maximo) {
+  return Math.max(minimo, Math.min(valor, maximo));
+}
+
+function iaAtivada() {
+  return Boolean(interfaceUsuario.alternarIa && interfaceUsuario.alternarIa.checked);
+}
+
+function marcarIaAtivada(ativada) {
+  if (interfaceUsuario.alternarIa) {
+    interfaceUsuario.alternarIa.checked = ativada;
+  }
+}
+
+function carregarMelhorDinoLocal() {
+  try {
+    const textoSalvo = localStorage.getItem("dino-melhor-cerebro");
+    return textoSalvo ? JSON.parse(textoSalvo) : null;
+  } catch (_erro) {
+    localStorage.removeItem("dino-melhor-cerebro");
+    localStorage.removeItem("dino-melhor-aptidao");
+    localStorage.removeItem("dino-melhor-pontuacao");
+    return null;
+  }
+}
+
+function salvarMelhorDinoLocal(cerebro, aptidao, pontuacao) {
+  localStorage.setItem("dino-melhor-cerebro", JSON.stringify(cerebro));
+  localStorage.setItem("dino-melhor-aptidao", String(aptidao));
+  localStorage.setItem("dino-melhor-pontuacao", String(Math.floor(pontuacao)));
 }
 
 function tamanhoAsset(asset, larguraPadrao, alturaPadrao) {
@@ -140,71 +206,167 @@ function tamanhoAsset(asset, larguraPadrao, alturaPadrao) {
   };
 }
 
+// Cria uma matriz de pesos aleatorios para a rede neural.
+function matrizAleatoria(linhas, colunas, escala = 0.7) {
+  return Array.from({ length: linhas }, () => Array.from({ length: colunas }, () => aleatorioEntre(-escala, escala)));
+}
+
+// Cria um vetor de bias aleatorio para a rede neural.
+function vetorAleatorio(tamanho, escala = 0.2) {
+  return Array.from({ length: tamanho }, () => aleatorioEntre(-escala, escala));
+}
+
+// Cria uma rede neural pequena: entradas -> camada oculta -> saidas.
+function criarCerebroAleatorio() {
+  return {
+    formato: "cerebro-dino-navegador-v1",
+    quantidadeEntradas: configuracao.quantidadeEntradas,
+    quantidadeNeuroniosOcultos: configuracao.quantidadeNeuroniosOcultos,
+    quantidadeSaidas: configuracao.quantidadeSaidas,
+    pesosEntradaOculta: matrizAleatoria(configuracao.quantidadeEntradas, configuracao.quantidadeNeuroniosOcultos),
+    biasOculta: vetorAleatorio(configuracao.quantidadeNeuroniosOcultos),
+    pesosOcultaSaida: matrizAleatoria(configuracao.quantidadeNeuroniosOcultos, configuracao.quantidadeSaidas),
+    biasSaida: [0.08, 0, 0],
+  };
+}
+
+// Faz uma copia profunda do cerebro para que mutacoes nao alterem o original.
+function clonarCerebro(cerebro) {
+  return JSON.parse(JSON.stringify(cerebro));
+}
+
+// Mistura pesos de dois pais para criar um filho.
+// Cada peso tem 50% de chance de vir do pai A ou do pai B.
+function cruzarCerebros(paiA, paiB) {
+  const filho = clonarCerebro(paiA);
+  const atributos = ["pesosEntradaOculta", "biasOculta", "pesosOcultaSaida", "biasSaida"];
+
+  for (const atributo of atributos) {
+    const valorA = paiA[atributo];
+    const valorB = paiB[atributo];
+    filho[atributo] = Array.isArray(valorA[0])
+      ? valorA.map((linha, linhaIndice) => linha.map((valor, colunaIndice) => (Math.random() < 0.5 ? valor : valorB[linhaIndice][colunaIndice])))
+      : valorA.map((valor, indice) => (Math.random() < 0.5 ? valor : valorB[indice]));
+  }
+
+  return filho;
+}
+
+// Aplica pequenas alteracoes aleatorias nos pesos do cerebro.
+// A escala permite fazer mutacoes mais fracas ou mais fortes.
+function mutarCerebro(cerebro, escala = 1) {
+  const atributos = ["pesosEntradaOculta", "biasOculta", "pesosOcultaSaida", "biasSaida"];
+  const taxa = Math.min(0.3, configuracao.taxaMutacao * escala);
+  const forca = configuracao.forcaMutacao * escala;
+
+  for (const atributo of atributos) {
+    const valor = cerebro[atributo];
+    cerebro[atributo] = Array.isArray(valor[0])
+      ? valor.map((linha) => linha.map((peso) => (Math.random() < taxa ? peso + aleatorioEntre(-forca, forca) : peso)))
+      : valor.map((peso) => (Math.random() < taxa ? peso + aleatorioEntre(-forca, forca) : peso));
+  }
+}
+
+// Multiplica as entradas pelos pesos da rede neural.
+function produtoVetorMatriz(vetor, matriz) {
+  return matriz[0].map((_, coluna) => vetor.reduce((soma, valor, linha) => soma + valor * matriz[linha][coluna], 0));
+}
+
+// Soma dois vetores posicao por posicao.
+function somarVetores(vetorA, vetorB) {
+  return vetorA.map((valor, indice) => valor + vetorB[indice]);
+}
+
+// Funcao de ativacao ReLU: corta valores negativos para zero.
+function relu(valor) {
+  return Math.max(0, valor);
+}
+
+// Cria um dino individual. No treino, cada dino tem seu proprio cerebro.
+function criarDino(indice, cerebro = null) {
+  return {
+    indice,
+    cor: coresDinos[indice % coresDinos.length],
+    cerebro: cerebro || criarCerebroAleatorio(),
+    vivo: true,
+    pontuacao: 0,
+    aptidao: 0,
+    bonusObstaculos: 0,
+    obstaculosPassados: new Set(),
+    x: configuracao.dinoX,
+    y: configuracao.dinoCorrendoY,
+    largura: 88,
+    altura: 94,
+    velocidadePulo: configuracao.velocidadePulo,
+    noChao: true,
+    abaixado: false,
+    pulando: false,
+    quedaRapida: false,
+    correndo: false,
+    indicePasso: 0,
+    modo: "parado",
+  };
+}
+
+// Cria a populacao inicial.
+// Se existir um cerebro treinado pelo Python, a populacao nasce a partir dele e de mutacoes.
+function criarPopulacao(tamanho = configuracao.tamanhoPopulacao) {
+  if (cerebroBaseTreino) {
+    const populacao = Array.from({ length: tamanho }, (_, indice) => {
+      const cerebro = clonarCerebro(cerebroBaseTreino);
+      if (indice > 0) mutarCerebro(cerebro, 0.45 + (indice % 12) * 0.08);
+      return criarDino(indice, cerebro);
+    });
+
+    if (melhorCerebroHistorico) {
+      populacao[1] = criarDino(1, clonarCerebro(melhorCerebroHistorico));
+    }
+
+    return populacao;
+  }
+
+  const populacao = Array.from({ length: tamanho }, (_, indice) => criarDino(indice));
+
+  if (melhorCerebroHistorico) {
+    populacao[1] = criarDino(1, clonarCerebro(melhorCerebroHistorico));
+  }
+
+  return populacao;
+}
+
+// Sorteia um novo obstaculo com formato parecido com o jogo original.
 function criarObstaculo() {
-  const tipoObstaculo = Math.floor(Math.random() * 3);
+  const tipoObstaculo = Math.floor(Math.random() * 4);
 
   if (tipoObstaculo === 0) {
     const variante = Math.floor(Math.random() * 3);
     const tamanho = tamanhoAsset(imagens.cacto.pequeno[variante], [34, 68, 102][variante], 70);
-    return {
-      tipo: "cactoPequeno",
-      variante,
-      x: configuracao.largura,
-      y: 325,
-      largura: tamanho.largura,
-      altura: tamanho.altura,
-      passou: false,
-    };
+    return { id: proximoIdObstaculo++, tipo: "cactoPequeno", variante, x: configuracao.largura, y: 325, largura: tamanho.largura, altura: tamanho.altura, passou: false };
   }
 
   if (tipoObstaculo === 1) {
     const variante = Math.floor(Math.random() * 3);
     const tamanho = tamanhoAsset(imagens.cacto.grande[variante], [50, 100, 150][variante], 95);
-    return {
-      tipo: "cactoGrande",
-      variante,
-      x: configuracao.largura,
-      y: 300,
-      largura: tamanho.largura,
-      altura: tamanho.altura,
-      passou: false,
-    };
+    return { id: proximoIdObstaculo++, tipo: "cactoGrande", variante, x: configuracao.largura, y: 300, largura: tamanho.largura, altura: tamanho.altura, passou: false };
   }
 
-  const tamanho = tamanhoAsset(imagens.passaro[0], 92, 65);
-  return {
-    tipo: "passaro",
-    variante: 0,
-    x: configuracao.largura,
-    y: escolherAleatorio([250, 290, 320]),
-    largura: tamanho.largura,
-    altura: tamanho.altura,
-    passou: false,
-  };
+  if (tipoObstaculo === 2) {
+    const tamanho = tamanhoAsset(imagens.passaro[0], 92, 65);
+    return { id: proximoIdObstaculo++, tipo: "passaro", variante: 0, x: configuracao.largura, y: escolherAleatorio([250, 290, 320]), largura: tamanho.largura, altura: tamanho.altura, passou: false };
+  }
+
+  // Cano vindo de cima: termina baixo o suficiente para bater no dino em pe,
+  // mas ainda deixa uma fresta para o dino abaixado passar por baixo.
+  return { id: proximoIdObstaculo++, tipo: "cano", variante: 0, x: configuracao.largura, y: 0, largura: 86, altura: 354, passou: false };
 }
 
-function reiniciar() {
-  jogoRodando = false;
-  ultimoQuadro = 0;
+// Reseta o "mundo": velocidade, pista, nuvem, obstaculos e lista de dinos.
+function criarMundo(dinos) {
   estado = {
     tick: 0,
-    pontuacao: 0,
-    vivo: true,
     velocidade: configuracao.velocidadeBase,
     pistaX: 0,
-    dino: {
-      x: configuracao.dinoX,
-      y: configuracao.dinoCorrendoY,
-      largura: 88,
-      altura: 94,
-      velocidadePulo: configuracao.velocidadePulo,
-      noChao: true,
-      abaixado: false,
-      pulando: false,
-      correndo: false,
-      indicePasso: 0,
-      modo: "parado",
-    },
+    dinos,
     obstaculos: [],
     nuvem: {
       x: configuracao.largura + Math.floor(aleatorioEntre(800, 1000)),
@@ -212,8 +374,17 @@ function reiniciar() {
       largura: 92,
     },
   };
+  melhorPontuacaoGeracao = 0;
+  proximoIdObstaculo = 1;
+}
 
-  aplicarTamanhoDino();
+// Volta para o modo normal com um unico dino.
+function reiniciar() {
+  modoTreino = false;
+  jogoRodando = false;
+  ultimoQuadro = 0;
+  geracaoAtual = 1;
+  criarMundo([criarDino(0, agenteIa ? null : criarCerebroAleatorio())]);
   interfaceUsuario.sobreposicao.hidden = false;
   interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Dino pronto";
   atualizarInterface();
@@ -221,9 +392,50 @@ function reiniciar() {
   return obterEstado();
 }
 
-function obterCaixasDino() {
-  const dino = estado.dino;
+// Tenta carregar o cerebro salvo pelo Python para melhorar o ponto de partida do treino no navegador.
+async function tentarCarregarCerebroBase() {
+  if (cerebroBaseTreino) return cerebroBaseTreino;
 
+  try {
+    const resposta = await fetch("cerebro_dino.json", { cache: "no-store" });
+    if (!resposta.ok) return null;
+    cerebroBaseTreino = await resposta.json();
+    const aptidaoBase = Number(cerebroBaseTreino.aptidao || cerebroBaseTreino.pontuacao || 0);
+
+    if (!melhorCerebroHistorico || aptidaoBase > melhorAptidaoHistorica) {
+      melhorCerebroHistorico = clonarCerebro(cerebroBaseTreino);
+      melhorAptidaoHistorica = aptidaoBase;
+      salvarMelhorDinoLocal(melhorCerebroHistorico, melhorAptidaoHistorica, cerebroBaseTreino.pontuacao || 0);
+    }
+
+    return cerebroBaseTreino;
+  } catch (_erro) {
+    return null;
+  }
+}
+
+// Inicia o treino visual no navegador com varios dinos coloridos.
+async function iniciarTreino() {
+  await tentarCarregarCerebroBase();
+  modoTreino = true;
+  jogoRodando = true;
+  ultimoQuadro = 0;
+  geracaoAtual = 1;
+  historicoGeracoes = [];
+  criarMundo(criarPopulacao());
+  marcarIaAtivada(true);
+  interfaceUsuario.sobreposicao.hidden = true;
+  desenharGrafico();
+  requestAnimationFrame(quadro);
+}
+
+// Retorna o primeiro dino vivo, usado para exibir o estado no painel.
+function obterDinoPrincipal() {
+  return estado.dinos.find((dino) => dino.vivo) || estado.dinos[0];
+}
+
+// Hitboxes do dino. Sao varias caixas menores, mais justas que um retangulo unico.
+function obterCaixasDino(dino) {
   if (dino.abaixado) {
     return [
       { x: dino.x + 18, y: dino.y + 18, largura: 70, altura: 25 },
@@ -238,38 +450,31 @@ function obterCaixasDino() {
   ];
 }
 
+// Hitbox do obstaculo com margens internas para nao colidir em pixels transparentes.
 function obterCaixaObstaculo(obstaculo) {
   if (obstaculo.tipo === "passaro") {
-    return {
-      x: obstaculo.x + 10,
-      y: obstaculo.y + 10,
-      largura: obstaculo.largura - 20,
-      altura: obstaculo.altura - 20,
-    };
+    return { x: obstaculo.x + 10, y: obstaculo.y + 10, largura: obstaculo.largura - 20, altura: obstaculo.altura - 20 };
   }
 
-  return {
-    x: obstaculo.x + 8,
-    y: obstaculo.y + 5,
-    largura: obstaculo.largura - 16,
-    altura: obstaculo.altura - 10,
-  };
+  if (obstaculo.tipo === "cano") {
+    return { x: obstaculo.x + 8, y: obstaculo.y, largura: obstaculo.largura - 16, altura: obstaculo.altura };
+  }
+
+  return { x: obstaculo.x + 8, y: obstaculo.y + 5, largura: obstaculo.largura - 16, altura: obstaculo.altura - 10 };
 }
 
-function assetAtualDino() {
-  const dino = estado.dino;
+// Escolhe qual sprite do dino deve aparecer agora: correndo, pulando ou abaixado.
+function assetAtualDino(dino) {
   const quadro = Math.floor(dino.indicePasso / 5) % 2;
-
-  if (!estado.vivo) return imagens.dino.morto;
   if (dino.pulando || !dino.noChao) return imagens.dino.pulando;
   if (!jogoRodando) return imagens.dino.parado;
   if (dino.abaixado) return imagens.dino.abaixado[quadro];
   return imagens.dino.correndo[quadro];
 }
 
-function aplicarTamanhoDino() {
-  const dino = estado.dino;
-  const asset = assetAtualDino();
+// Atualiza largura/altura do dino de acordo com o sprite ou estado atual.
+function aplicarTamanhoDino(dino) {
+  const asset = assetAtualDino(dino);
 
   if (asset && asset.carregado) {
     dino.largura = asset.largura;
@@ -283,33 +488,44 @@ function aplicarTamanhoDino() {
   }
 }
 
+// Teste simples de colisao entre duas caixas retangulares.
 function sobrepoe(caixaA, caixaB) {
-  return (
-    caixaA.x < caixaB.x + caixaB.largura &&
-    caixaA.x + caixaA.largura > caixaB.x &&
-    caixaA.y < caixaB.y + caixaB.altura &&
-    caixaA.y + caixaA.altura > caixaB.y
-  );
+  return caixaA.x < caixaB.x + caixaB.largura && caixaA.x + caixaA.largura > caixaB.x && caixaA.y < caixaB.y + caixaB.altura && caixaA.y + caixaA.altura > caixaB.y;
 }
 
+// Pega o obstaculo mais proximo que ainda esta na frente do dino.
 function proximoObstaculo() {
-  return estado.obstaculos.find((obstaculo) => obstaculo.x + obstaculo.largura >= estado.dino.x) || null;
+  return estado.obstaculos.find((obstaculo) => obstaculo.x + obstaculo.largura >= configuracao.dinoX) || null;
 }
 
-function obterEstado() {
+// Converte o tipo textual do obstaculo em numero para a rede neural.
+function codigoTipoObstaculo(tipo) {
+  if (tipo === "cactoPequeno") return 0;
+  if (tipo === "cactoGrande") return 0.5;
+  if (tipo === "passaro") return 1;
+  if (tipo === "cano") return 1.5;
+  return 0;
+}
+
+// Monta o objeto de estado que aparece no painel e tambem alimenta a rede neural.
+function obterEstado(dino = obterDinoPrincipal()) {
   const obstaculo = proximoObstaculo();
-  const dino = estado.dino;
   return {
-    vivo: estado.vivo,
-    pontuacao: Math.floor(estado.pontuacao),
+    vivo: dino ? dino.vivo : false,
+    modoTreino,
+    geracao: geracaoAtual,
+    vivos: estado.dinos.filter((individuo) => individuo.vivo).length,
+    populacao: estado.dinos.length,
+    pontuacao: Math.floor(dino ? dino.pontuacao : 0),
+    melhorGeracao: Math.floor(melhorPontuacaoGeracao),
     velocidade: Number(estado.velocidade.toFixed(2)),
-    dinoY: Number((configuracao.dinoCorrendoY - dino.y).toFixed(2)),
-    velocidadeVerticalDino: Number(dino.velocidadePulo.toFixed(2)),
-    noChao: dino.noChao,
-    abaixado: dino.abaixado,
-    pulando: dino.pulando,
-    modo: dino.modo,
-    distanciaObstaculo: obstaculo ? Number((obstaculo.x - dino.x).toFixed(2)) : null,
+    dinoY: Number((configuracao.dinoCorrendoY - (dino ? dino.y : configuracao.dinoCorrendoY)).toFixed(2)),
+    velocidadeVerticalDino: Number((dino ? dino.velocidadePulo : configuracao.velocidadePulo).toFixed(2)),
+    noChao: dino ? dino.noChao : true,
+    abaixado: dino ? dino.abaixado : false,
+    pulando: dino ? dino.pulando : false,
+    modo: dino ? dino.modo : "parado",
+    distanciaObstaculo: obstaculo ? Number((obstaculo.x - configuracao.dinoX).toFixed(2)) : null,
     larguraObstaculo: obstaculo ? obstaculo.largura : 0,
     alturaObstaculo: obstaculo ? obstaculo.altura : 0,
     obstaculoY: obstaculo ? obstaculo.y : 0,
@@ -317,6 +533,46 @@ function obterEstado() {
   };
 }
 
+// Normaliza os dados do jogo para a mesma escala usada no treino Python.
+function montarEntradasNumpy(estadoJogo) {
+  const distancia = estadoJogo.distanciaObstaculo === null ? 600 : limitar(estadoJogo.distanciaObstaculo, 0, 600);
+  const velocidadeVerticalNormalizada = limitar((estadoJogo.velocidadeVerticalDino + configuracao.velocidadePulo) / (configuracao.velocidadePulo * 2), 0, 1);
+
+  return [
+    distancia / 600,
+    limitar(estadoJogo.larguraObstaculo / 180, 0, 1),
+    limitar(estadoJogo.alturaObstaculo / configuracao.altura, 0, 1),
+    limitar(estadoJogo.obstaculoY / configuracao.pistaY, 0, 1),
+    limitar(estadoJogo.velocidade / 8, 0, 1),
+    limitar(estadoJogo.dinoY / 180, 0, 1),
+    velocidadeVerticalNormalizada,
+    estadoJogo.noChao ? 1 : 0,
+    estadoJogo.abaixado ? 1 : 0,
+    limitar(codigoTipoObstaculo(estadoJogo.tipoObstaculo) / 1.5, 0, 1),
+  ];
+}
+
+function atualizarAptidao(dino) {
+  const sobrevivencia = Math.pow(Math.max(1, dino.pontuacao), 1.08);
+  dino.aptidao = sobrevivencia + dino.bonusObstaculos;
+}
+
+// Executa a rede neural e escolhe a acao de maior valor.
+function preverAcao(cerebro, estadoJogo) {
+  const entradas = montarEntradasNumpy(estadoJogo);
+  const camadaOcultaBruta = somarVetores(produtoVetorMatriz(entradas, cerebro.pesosEntradaOculta), cerebro.biasOculta);
+  const camadaOculta = camadaOcultaBruta.map(relu);
+  const saida = somarVetores(produtoVetorMatriz(camadaOculta, cerebro.pesosOcultaSaida), cerebro.biasSaida);
+  let melhorIndice = 0;
+
+  for (let i = 1; i < saida.length; i += 1) {
+    if (saida[i] > saida[melhorIndice]) melhorIndice = i;
+  }
+
+  return melhorIndice;
+}
+
+// Aceita numero, texto ou booleano e converte para uma acao padrao.
 function normalizarAcao(acaoRecebida) {
   if (acaoRecebida === "pular") return acao.pular;
   if (acaoRecebida === "abaixar") return acao.abaixar;
@@ -324,14 +580,8 @@ function normalizarAcao(acaoRecebida) {
   return Number(acaoRecebida) || acao.nada;
 }
 
-function passo(acaoRecebida = acao.nada, opcoes = {}) {
-  const deveDesenhar = opcoes.render !== false && opcoes.desenhar !== false;
-
-  if (!estado.vivo) {
-    return { estado: obterEstado(), recompensa: -10, finalizado: true };
-  }
-
-  const dino = estado.dino;
+// Aplica a acao escolhida no dino e atualiza pulo, abaixar, corrida e pontuacao.
+function aplicarAcaoDino(dino, acaoRecebida) {
   const escolhida = normalizarAcao(acaoRecebida);
 
   if (escolhida === acao.pular && !dino.pulando) {
@@ -339,12 +589,15 @@ function passo(acaoRecebida = acao.nada, opcoes = {}) {
     dino.correndo = false;
     dino.pulando = true;
     dino.noChao = false;
+  } else if (escolhida === acao.abaixar && dino.pulando) {
+    dino.quedaRapida = true;
   } else if (escolhida === acao.abaixar && !dino.pulando) {
     dino.abaixado = true;
     dino.correndo = false;
     dino.noChao = true;
   } else if (!dino.pulando) {
     dino.abaixado = false;
+    dino.quedaRapida = false;
     dino.correndo = true;
     dino.noChao = true;
   }
@@ -364,10 +617,11 @@ function passo(acaoRecebida = acao.nada, opcoes = {}) {
   if (dino.pulando) {
     dino.modo = "pulando";
     dino.y -= dino.velocidadePulo * configuracao.escalaPulo;
-    dino.velocidadePulo -= configuracao.decaimentoPulo;
+    dino.velocidadePulo -= dino.quedaRapida ? configuracao.decaimentoPulo * 3.8 : configuracao.decaimentoPulo;
 
     if (dino.velocidadePulo < -configuracao.velocidadePulo) {
       dino.pulando = false;
+      dino.quedaRapida = false;
       dino.correndo = true;
       dino.noChao = true;
       dino.velocidadePulo = configuracao.velocidadePulo;
@@ -375,19 +629,29 @@ function passo(acaoRecebida = acao.nada, opcoes = {}) {
     }
   }
 
-  aplicarTamanhoDino();
+  aplicarTamanhoDino(dino);
+  dino.pontuacao += 1;
+  atualizarAptidao(dino);
+}
 
+// Move obstaculos, nuvem e pista. Tambem da bonus quando um dino ultrapassa obstaculos.
+function atualizarMundo() {
   estado.tick += 0.1;
-  estado.pontuacao += 0.1;
-
-  if (estado.pontuacao % 100 === 0) {
-    estado.velocidade += 0.1;
-  }
+  estado.velocidade += 0.00045;
 
   for (const obstaculo of estado.obstaculos) {
     obstaculo.x -= estado.velocidade;
-    if (!obstaculo.passou && obstaculo.x + obstaculo.largura < dino.x) {
-      obstaculo.passou = true;
+  }
+
+  for (const dino of estado.dinos) {
+    if (!dino.vivo) continue;
+
+    for (const obstaculo of estado.obstaculos) {
+      if (obstaculo.x + obstaculo.largura < dino.x && !dino.obstaculosPassados.has(obstaculo.id)) {
+        dino.obstaculosPassados.add(obstaculo.id);
+        dino.bonusObstaculos += 120;
+        atualizarAptidao(dino);
+      }
     }
   }
 
@@ -395,11 +659,12 @@ function passo(acaoRecebida = acao.nada, opcoes = {}) {
 
   if (estado.obstaculos.length === 0) {
     estado.obstaculos.push(criarObstaculo());
+  } else if (estado.obstaculos[estado.obstaculos.length - 1].x < configuracao.largura - inteiroAleatorio(700, 3000)) {
+    estado.obstaculos.push(criarObstaculo());
   }
 
   estado.nuvem.x -= estado.velocidade;
   const larguraNuvem = imagens.outros.nuvem && imagens.outros.nuvem.carregado ? imagens.outros.nuvem.largura : estado.nuvem.largura;
-
   if (estado.nuvem.x < -larguraNuvem) {
     estado.nuvem.x = configuracao.largura + Math.floor(aleatorioEntre(2500, 3000));
     estado.nuvem.y = Math.floor(aleatorioEntre(50, 100));
@@ -408,27 +673,74 @@ function passo(acaoRecebida = acao.nada, opcoes = {}) {
   estado.pistaX -= estado.velocidade;
   const larguraPista = imagens.outros.pista && imagens.outros.pista.carregado ? imagens.outros.pista.largura : configuracao.largura;
   if (estado.pistaX <= -larguraPista) estado.pistaX = 0;
+}
 
-  const caixasDino = obterCaixasDino();
-  const colidiu = estado.obstaculos.some((obstaculo) => {
-    const caixaObstaculo = obterCaixaObstaculo(obstaculo);
-    return caixasDino.some((caixaDino) => sobrepoe(caixaDino, caixaObstaculo));
-  });
+// Verifica quais dinos bateram. Dinos mortos ficam invisiveis no desenho.
+function verificarColisoes() {
+  for (const dino of estado.dinos) {
+    if (!dino.vivo) continue;
+    const caixasDino = obterCaixasDino(dino);
+    const colidiu = estado.obstaculos.some((obstaculo) => {
+      const caixaObstaculo = obterCaixaObstaculo(obstaculo);
+      return caixasDino.some((caixaDino) => sobrepoe(caixaDino, caixaObstaculo));
+    });
 
-  if (colidiu) {
-    estado.vivo = false;
-    recorde = Math.max(recorde, Math.floor(estado.pontuacao));
-    localStorage.setItem("dino-recorde", String(recorde));
-    localStorage.setItem("dino-best", String(recorde));
-    interfaceUsuario.sobreposicao.hidden = false;
-    interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Fim de jogo";
+    if (colidiu) {
+      dino.vivo = false;
+      atualizarAptidao(dino);
+      melhorPontuacaoGeracao = Math.max(melhorPontuacaoGeracao, Math.floor(dino.pontuacao));
+      recorde = Math.max(recorde, Math.floor(dino.pontuacao));
+      localStorage.setItem("dino-recorde", String(recorde));
+    }
+  }
+}
 
-    if (deveDesenhar) {
-      atualizarInterface();
-      desenhar();
+// Le as teclas do usuario para controlar o dino no modo normal.
+function acaoManual() {
+  if (teclasPressionadas.has("KeyS") || teclasPressionadas.has("ArrowDown")) return acao.abaixar;
+  if (teclasPressionadas.has("Space") || teclasPressionadas.has("KeyW") || teclasPressionadas.has("ArrowUp")) return acao.pular;
+  return acao.nada;
+}
+
+// Executa um passo de simulacao.
+// No modo treino, todos os dinos vivos escolhem acao pela propria rede neural.
+// No modo normal, usa teclado ou agente carregado.
+function passo(acaoRecebida = acao.nada, opcoes = {}) {
+  const deveDesenhar = opcoes.render !== false && opcoes.desenhar !== false;
+  const vivosAntes = estado.dinos.filter((dino) => dino.vivo).length;
+
+  if (vivosAntes === 0) {
+    if (modoTreino) criarProximaGeracao();
+    return { estado: obterEstado(), recompensa: 0, finalizado: true };
+  }
+
+  for (const dino of estado.dinos) {
+    if (!dino.vivo) continue;
+    let escolha = acao.nada;
+
+    if (modoTreino) {
+      escolha = preverAcao(dino.cerebro, obterEstado(dino));
+    } else if (iaAtivada() && agenteIa) {
+      escolha = agenteIa(obterEstado(dino));
+    } else {
+      escolha = acaoRecebida === acao.nada ? acaoManual() : acaoRecebida;
     }
 
-    return { estado: obterEstado(), recompensa: -10, finalizado: true };
+    aplicarAcaoDino(dino, escolha);
+  }
+
+  atualizarMundo();
+  verificarColisoes();
+  melhorPontuacaoGeracao = Math.max(melhorPontuacaoGeracao, ...estado.dinos.map((dino) => dino.pontuacao));
+
+  if (estado.dinos.every((dino) => !dino.vivo)) {
+    if (modoTreino) {
+      criarProximaGeracao();
+    } else {
+      jogoRodando = false;
+      interfaceUsuario.sobreposicao.hidden = false;
+      interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Fim de jogo";
+    }
   }
 
   if (deveDesenhar) {
@@ -436,93 +748,112 @@ function passo(acaoRecebida = acao.nada, opcoes = {}) {
     desenhar();
   }
 
-  return { estado: obterEstado(), recompensa: 1, finalizado: false };
+  return { estado: obterEstado(), recompensa: 1, finalizado: estado.dinos.every((dino) => !dino.vivo) };
 }
 
-function desenharSpriteDino() {
-  const dino = estado.dino;
-  const sprite = assetAtualDino();
+// Escolhe um pai por torneio entre os melhores individuos da geracao.
+function escolherPai(ranqueados) {
+  const limite = Math.max(configuracao.quantidadeElite * 3, 3);
+  const candidatos = Array.from({ length: 3 }, () => ranqueados[inteiroAleatorio(0, Math.min(limite, ranqueados.length) - 1)]);
+  candidatos.sort((a, b) => b.aptidao - a.aptidao);
+  return candidatos[0];
+}
+
+// Fecha a geracao atual e cria a proxima usando elitismo, crossover e mutacao.
+function criarProximaGeracao() {
+  const ranqueados = [...estado.dinos].sort((a, b) => b.aptidao - a.aptidao);
+  const campeao = ranqueados[0];
+  const melhorPontuacao = Math.floor(campeao.pontuacao);
+  historicoGeracoes.push({ geracao: geracaoAtual, pontuacao: melhorPontuacao });
+
+  if (campeao.aptidao > melhorAptidaoHistorica) {
+    melhorAptidaoHistorica = campeao.aptidao;
+    melhorCerebroHistorico = clonarCerebro(campeao.cerebro);
+    salvarMelhorDinoLocal(melhorCerebroHistorico, melhorAptidaoHistorica, campeao.pontuacao);
+  }
+
+  const novosCerebros = [];
+
+  if (melhorCerebroHistorico) {
+    novosCerebros.push(clonarCerebro(melhorCerebroHistorico));
+  }
+
+  for (let i = 0; i < Math.min(configuracao.quantidadeElite, ranqueados.length); i += 1) {
+    novosCerebros.push(clonarCerebro(ranqueados[i].cerebro));
+  }
+
+  while (novosCerebros.length < configuracao.tamanhoPopulacao) {
+    const paiA = escolherPai(ranqueados);
+    const paiB = escolherPai(ranqueados);
+    const filho = cruzarCerebros(paiA.cerebro, paiB.cerebro);
+    mutarCerebro(filho, Math.random() < 0.18 ? 1.8 : 1);
+    novosCerebros.push(filho);
+  }
+
+  geracaoAtual += 1;
+  criarMundo(novosCerebros.map((cerebro, indice) => criarDino(indice, cerebro)));
+  desenharGrafico();
+}
+
+// Desenha o sprite PNG do dino. No treino, aplica uma cor por cima do sprite.
+function desenharSpriteDino(dino) {
+  const sprite = assetAtualDino(dino);
   if (!sprite || !sprite.carregado) return false;
 
   contexto.save();
   contexto.imageSmoothingEnabled = false;
   contexto.drawImage(sprite.imagem, dino.x, dino.y);
+
+  if (modoTreino) {
+    pintarSpriteDino(dino);
+  }
+
   contexto.restore();
   return true;
 }
 
-function desenharDino() {
-  if (desenharSpriteDino()) return;
-  desenharDinoFallback();
+// Pinta somente os pixels visiveis do sprite, preservando transparencia do PNG.
+function pintarSpriteDino(dino) {
+  contexto.globalCompositeOperation = "source-atop";
+  contexto.globalAlpha = 0.72;
+  contexto.fillStyle = dino.cor;
+  contexto.fillRect(dino.x, dino.y, dino.largura, dino.altura);
+  contexto.globalAlpha = 1;
+  contexto.globalCompositeOperation = "source-over";
 }
 
-function desenharDinoFallback() {
-  const dino = estado.dino;
-  const pe = Math.floor(estado.tick / 7) % 2;
-  const cor = "#535353";
-
-  contexto.save();
-  contexto.fillStyle = cor;
-
-  if (dino.abaixado && dino.noChao) {
-    const y = configuracao.pistaY - 40;
-    contexto.fillRect(dino.x + 8, y + 14, 58, 22);
-    contexto.fillRect(dino.x + 48, y + 2, 28, 24);
-    contexto.fillRect(dino.x + 72, y + 12, 14, 8);
-    contexto.fillRect(dino.x - 8, y + 21, 24, 8);
-    contexto.fillRect(dino.x + 2, y + 34, 16, 8);
-    contexto.fillRect(dino.x + 42, y + 34, 18, 8);
-    contexto.fillStyle = "#f7f7f7";
-    contexto.fillRect(dino.x + 67, y + 8, 4, 4);
-    contexto.fillStyle = cor;
-    contexto.fillRect(dino.x + 74, y + 22, 8, 4);
-  } else {
-    const x = dino.x;
-    const y = dino.y;
-
-    contexto.fillRect(x + 18, y + 18, 33, 42);
-    contexto.fillRect(x + 39, y + 2, 35, 30);
-    contexto.fillRect(x + 69, y + 14, 12, 8);
-    contexto.fillRect(x + 51, y + 31, 9, 9);
-    contexto.fillRect(x + 7, y + 31, 15, 9);
-    contexto.fillRect(x - 8, y + 38, 16, 8);
-    contexto.fillRect(x - 18, y + 45, 12, 7);
-    contexto.fillRect(x + 23, y + 58, 9, 17);
-    contexto.fillRect(x + 42, y + 58, 9, 17);
-
-    if (dino.noChao) {
-      if (pe === 0) {
-        contexto.fillRect(x + 18, y + 72, 20, 6);
-        contexto.fillRect(x + 42, y + 72, 9, 6);
-      } else {
-        contexto.fillRect(x + 23, y + 72, 9, 6);
-        contexto.fillRect(x + 38, y + 72, 22, 6);
-      }
-    } else {
-      contexto.fillRect(x + 20, y + 70, 13, 6);
-      contexto.fillRect(x + 42, y + 70, 13, 6);
-    }
-
-    contexto.fillStyle = "#f7f7f7";
-    contexto.fillRect(x + 62, y + 9, 4, 4);
-    contexto.fillStyle = cor;
-    contexto.fillRect(x + 68, y + 26, 9, 4);
-    contexto.fillRect(x + 32, y + 36, 12, 5);
-  }
-
-  contexto.restore();
+// Desenha um dino se ele ainda estiver vivo.
+function desenharDino(dino) {
+  if (!dino.vivo) return;
+  desenharSpriteDino(dino);
 }
 
+// Desenha cactos e passaros, usando sprites quando disponiveis.
 function desenharObstaculo(obstaculo) {
   let asset = null;
+
+  if (obstaculo.tipo === "cano") {
+    contexto.save();
+    contexto.fillStyle = "#f5f5f5";
+    contexto.strokeStyle = "#262626";
+    contexto.lineWidth = 3;
+    contexto.fillRect(obstaculo.x + 14, obstaculo.y, obstaculo.largura - 28, obstaculo.altura);
+    contexto.strokeRect(obstaculo.x + 14, obstaculo.y, obstaculo.largura - 28, obstaculo.altura);
+    contexto.fillStyle = "#d4d4d4";
+    contexto.fillRect(obstaculo.x, obstaculo.altura - 28, obstaculo.largura, 28);
+    contexto.strokeRect(obstaculo.x, obstaculo.altura - 28, obstaculo.largura, 28);
+    contexto.fillStyle = "rgba(0, 0, 0, 0.08)";
+    contexto.fillRect(obstaculo.x + 24, obstaculo.y + 8, 10, obstaculo.altura - 48);
+    contexto.restore();
+    return;
+  }
 
   if (obstaculo.tipo === "cactoPequeno") {
     asset = imagens.cacto.pequeno[obstaculo.variante];
   } else if (obstaculo.tipo === "cactoGrande") {
     asset = imagens.cacto.grande[obstaculo.variante];
   } else if (obstaculo.tipo === "passaro") {
-    const quadro = Math.floor(estado.tick / 5) % 2;
-    asset = imagens.passaro[quadro];
+    asset = imagens.passaro[Math.floor(estado.tick / 5) % 2];
   }
 
   if (asset && asset.carregado) {
@@ -537,22 +868,11 @@ function desenharObstaculo(obstaculo) {
   contexto.fillStyle = "#535353";
 
   if (obstaculo.tipo === "passaro") {
-    const batidaAsa = Math.floor(estado.tick / 10) % 2;
     contexto.fillRect(obstaculo.x + 24, obstaculo.y + 24, 44, 18);
     contexto.fillRect(obstaculo.x + 64, obstaculo.y + 18, 18, 10);
-    contexto.fillRect(obstaculo.x + 80, obstaculo.y + 22, 10, 5);
-
-    if (batidaAsa === 0) {
-      contexto.fillRect(obstaculo.x + 6, obstaculo.y + 8, 34, 12);
-      contexto.fillRect(obstaculo.x + 30, obstaculo.y + 40, 30, 10);
-    } else {
-      contexto.fillRect(obstaculo.x + 8, obstaculo.y + 42, 34, 12);
-      contexto.fillRect(obstaculo.x + 30, obstaculo.y + 8, 30, 10);
-    }
   } else {
     const quantidade = obstaculo.variante + 1;
     const larguraCacto = obstaculo.tipo === "cactoGrande" ? 34 : 24;
-
     for (let i = 0; i < quantidade; i += 1) {
       const x = obstaculo.x + i * larguraCacto;
       contexto.fillRect(x + larguraCacto * 0.38, obstaculo.y, larguraCacto * 0.28, obstaculo.altura);
@@ -564,6 +884,7 @@ function desenharObstaculo(obstaculo) {
   contexto.restore();
 }
 
+// Desenha a pista/linha do chao com sprite ou fallback.
 function desenharPista() {
   const pista = imagens.outros.pista;
 
@@ -583,14 +904,10 @@ function desenharPista() {
     contexto.moveTo(deslocamento, configuracao.pistaY);
     contexto.lineTo(deslocamento + configuracao.largura, configuracao.pistaY);
     contexto.stroke();
-
-    for (let x = deslocamento + 12; x < deslocamento + configuracao.largura; x += 72) {
-      contexto.fillRect(x, configuracao.pistaY + 18, 36, 3);
-      contexto.fillRect(x + 44, configuracao.pistaY + 38, 18, 3);
-    }
   }
 }
 
+// Desenha a nuvem do fundo.
 function desenharNuvem() {
   const nuvem = estado.nuvem;
   const assetNuvem = imagens.outros.nuvem;
@@ -612,19 +929,7 @@ function desenharNuvem() {
   contexto.fill();
 }
 
-function desenharHitboxes() {
-  contexto.strokeStyle = "red";
-  for (const caixa of obterCaixasDino()) {
-    contexto.strokeRect(caixa.x, caixa.y, caixa.largura, caixa.altura);
-  }
-
-  contexto.strokeStyle = "blue";
-  for (const obstaculo of estado.obstaculos) {
-    const caixa = obterCaixaObstaculo(obstaculo);
-    contexto.strokeRect(caixa.x, caixa.y, caixa.largura, caixa.altura);
-  }
-}
-
+// Redesenha a cena inteira do jogo.
 function desenhar() {
   contexto.clearRect(0, 0, configuracao.largura, configuracao.altura);
   contexto.fillStyle = "#ffffff";
@@ -633,159 +938,122 @@ function desenhar() {
   desenharNuvem();
   desenharPista();
 
-  for (const obstaculo of estado.obstaculos) {
-    desenharObstaculo(obstaculo);
-  }
+  for (const obstaculo of estado.obstaculos) desenharObstaculo(obstaculo);
+  for (const dino of estado.dinos) desenharDino(dino);
 
-  desenharDino();
-
-  if (!estado.vivo) {
+  if (!modoTreino && estado.dinos.every((dino) => !dino.vivo)) {
     contexto.fillStyle = "rgba(177, 58, 50, 0.12)";
     contexto.fillRect(0, 0, configuracao.largura, configuracao.altura);
-
     const fimDeJogo = imagens.outros.fimDeJogo;
     if (fimDeJogo && fimDeJogo.carregado) {
       contexto.drawImage(fimDeJogo.imagem, (configuracao.largura - fimDeJogo.largura) / 2, 210);
     }
-
-    desenharHitboxes();
   }
 }
 
+// Desenha o grafico de melhor pontuacao por geracao.
+function desenharGrafico() {
+  const largura = telaGrafico.width;
+  const altura = telaGrafico.height;
+  const margem = 34;
+  const pontos = [...historicoGeracoes];
+
+  if (modoTreino) {
+    pontos.push({ geracao: geracaoAtual, pontuacao: Math.floor(melhorPontuacaoGeracao) });
+  }
+
+  contextoGrafico.clearRect(0, 0, largura, altura);
+  contextoGrafico.fillStyle = "#ffffff";
+  contextoGrafico.fillRect(0, 0, largura, altura);
+
+  contextoGrafico.strokeStyle = "#c9d2ca";
+  contextoGrafico.lineWidth = 1;
+  contextoGrafico.beginPath();
+  contextoGrafico.moveTo(margem, 12);
+  contextoGrafico.lineTo(margem, altura - margem);
+  contextoGrafico.lineTo(largura - 12, altura - margem);
+  contextoGrafico.stroke();
+
+  contextoGrafico.fillStyle = "#6c746e";
+  contextoGrafico.font = "12px system-ui";
+  contextoGrafico.fillText("pontuacao", 8, 20);
+  contextoGrafico.fillText("geracao", largura - 72, altura - 10);
+
+  if (pontos.length === 0) {
+    contextoGrafico.fillText("Inicie o treinamento.", margem + 16, altura / 2);
+    return;
+  }
+
+  const maiorPontuacao = Math.max(1, ...pontos.map((ponto) => ponto.pontuacao));
+  const intervalo = Math.max(1, pontos.length - 1);
+  const xDoPonto = (indice) => margem + (indice / intervalo) * (largura - margem - 18);
+  const yDoPonto = (pontuacao) => altura - margem - (pontuacao / maiorPontuacao) * (altura - margem - 22);
+
+  contextoGrafico.strokeStyle = "#1d7f68";
+  contextoGrafico.lineWidth = 3;
+  contextoGrafico.beginPath();
+  pontos.forEach((ponto, indice) => {
+    const x = xDoPonto(indice);
+    const y = yDoPonto(ponto.pontuacao);
+    if (indice === 0) contextoGrafico.moveTo(x, y);
+    else contextoGrafico.lineTo(x, y);
+  });
+  contextoGrafico.stroke();
+
+  contextoGrafico.fillStyle = "#105948";
+  pontos.forEach((ponto, indice) => {
+    const x = xDoPonto(indice);
+    const y = yDoPonto(ponto.pontuacao);
+    contextoGrafico.beginPath();
+    contextoGrafico.arc(x, y, 4, 0, Math.PI * 2);
+    contextoGrafico.fill();
+    if (indice === pontos.length - 1) contextoGrafico.fillText(String(ponto.pontuacao), x - 6, y - 10);
+  });
+}
+
+// Atualiza textos do HUD, painel JSON e grafico.
 function atualizarInterface() {
-  interfaceUsuario.pontuacao.textContent = String(Math.floor(estado.pontuacao));
+  const vivos = estado.dinos.filter((dino) => dino.vivo).length;
+  interfaceUsuario.pontuacao.textContent = String(Math.floor(melhorPontuacaoGeracao));
   interfaceUsuario.recorde.textContent = String(recorde);
   interfaceUsuario.velocidade.textContent = estado.velocidade.toFixed(1);
+  interfaceUsuario.geracao.textContent = String(geracaoAtual);
+  interfaceUsuario.vivos.textContent = `${vivos}/${estado.dinos.length}`;
+  interfaceUsuario.melhorGeracao.textContent = String(Math.floor(melhorPontuacaoGeracao));
   interfaceUsuario.valorPassosPorQuadro.textContent = interfaceUsuario.passosPorQuadro.value;
   interfaceUsuario.visualizacaoEstado.textContent = JSON.stringify(obterEstado(), null, 2);
+  desenharGrafico();
 }
 
-function acaoManual() {
-  if (teclasPressionadas.has("KeyS") || teclasPressionadas.has("ArrowDown")) return acao.abaixar;
-  if (teclasPressionadas.has("Space") || teclasPressionadas.has("KeyW") || teclasPressionadas.has("ArrowUp")) return acao.pular;
-  return acao.nada;
-}
-
+// Loop de animacao. Pode executar varios passos por quadro para acelerar o treino.
 function quadro(tempo) {
   if (!jogoRodando) return;
   if (!ultimoQuadro) ultimoQuadro = tempo;
 
   const passos = Number(interfaceUsuario.passosPorQuadro.value);
+  for (let i = 0; i < passos; i += 1) passo(acao.nada, { desenhar: false });
 
-  for (let i = 0; i < passos; i += 1) {
-    const entrada = interfaceUsuario.alternarIa.checked && agenteIa ? agenteIa(obterEstado()) : acaoManual();
-    const resultado = passo(entrada);
-
-    if (resultado.finalizado) {
-      jogoRodando = false;
-      break;
-    }
-  }
-
+  atualizarInterface();
+  desenhar();
   ultimoQuadro = tempo;
   if (jogoRodando) requestAnimationFrame(quadro);
 }
 
+// Inicia o modo normal: um dino, controlado por teclado ou agente carregado.
 function iniciar() {
-  if (!estado.vivo) reiniciar();
+  modoTreino = false;
+  if (estado.dinos.every((dino) => !dino.vivo)) reiniciar();
   if (jogoRodando) return;
   jogoRodando = true;
   interfaceUsuario.sobreposicao.hidden = true;
   requestAnimationFrame(quadro);
 }
 
+// Pausa o jogo/treino sem resetar o estado atual.
 function pausar() {
   jogoRodando = false;
   interfaceUsuario.sobreposicao.hidden = false;
   interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Pausado";
-}
-
-function definirAgente(agente) {
-  agenteIa = typeof agente === "function" ? agente : null;
-  interfaceUsuario.alternarIa.checked = Boolean(agenteIa);
-}
-
-function relu(valor) {
-  return Math.max(0, valor);
-}
-
-function produtoVetorMatriz(vetor, matriz) {
-  return matriz[0].map((_, coluna) => vetor.reduce((soma, valor, linha) => soma + valor * matriz[linha][coluna], 0));
-}
-
-function somarVetores(vetorA, vetorB) {
-  return vetorA.map((valor, indice) => valor + vetorB[indice]);
-}
-
-function codigoTipoObstaculo(tipo) {
-  if (tipo === "cactoPequeno") return 0;
-  if (tipo === "cactoGrande") return 0.5;
-  if (tipo === "passaro") return 1;
-  return 0;
-}
-
-function montarEntradasNumpy(estadoJogo) {
-  return [
-    estadoJogo.distanciaObstaculo === null ? 1 : Math.max(0, Math.min(estadoJogo.distanciaObstaculo / configuracao.largura, 1)),
-    estadoJogo.larguraObstaculo / 160,
-    estadoJogo.alturaObstaculo / 120,
-    estadoJogo.obstaculoY / configuracao.altura,
-    estadoJogo.velocidade / 12,
-    estadoJogo.dinoY / 160,
-    estadoJogo.velocidadeVerticalDino / configuracao.velocidadePulo,
-    estadoJogo.noChao ? 1 : 0,
-    estadoJogo.abaixado ? 1 : 0,
-    codigoTipoObstaculo(estadoJogo.tipoObstaculo),
-  ];
-}
-
-function criarAgenteNumpy(cerebro) {
-  return (estadoJogo) => {
-    const entradas = montarEntradasNumpy(estadoJogo);
-    const camadaOcultaBruta = somarVetores(produtoVetorMatriz(entradas, cerebro.pesosEntradaOculta), cerebro.biasOculta);
-    const camadaOculta = camadaOcultaBruta.map(relu);
-    const saida = somarVetores(produtoVetorMatriz(camadaOculta, cerebro.pesosOcultaSaida), cerebro.biasSaida);
-    let melhorIndice = 0;
-
-    for (let i = 1; i < saida.length; i += 1) {
-      if (saida[i] > saida[melhorIndice]) melhorIndice = i;
-    }
-
-    return melhorIndice;
-  };
-}
-
-async function carregarCerebroNumpy(caminho = "cerebro_dino.json") {
-  const resposta = await fetch(caminho);
-  if (!resposta.ok) throw new Error(`Nao foi possivel carregar ${caminho}`);
-
-  const cerebro = await resposta.json();
-  definirAgente(criarAgenteNumpy(cerebro));
-  interfaceUsuario.sobreposicao.hidden = false;
-  interfaceUsuario.sobreposicao.querySelector("strong").textContent = "IA NumPy carregada";
-  return cerebro;
-}
-
-function rodarEpisodio(agente, maximoPassos = 5000) {
-  reiniciar();
-  let recompensaTotal = 0;
-  let resultado = { estado: obterEstado(), recompensa: 0, finalizado: false };
-
-  for (let i = 0; i < maximoPassos && !resultado.finalizado; i += 1) {
-    const acaoEscolhida = typeof agente === "function" ? agente(obterEstado()) : acao.nada;
-    resultado = passo(acaoEscolhida, { desenhar: false });
-    recompensaTotal += resultado.recompensa;
-  }
-
-  atualizarInterface();
-  desenhar();
-  return {
-    pontuacao: Math.floor(estado.pontuacao),
-    recompensaTotal: Number(recompensaTotal.toFixed(4)),
-    passos: estado.tick,
-    finalizado: resultado.finalizado,
-    estado: obterEstado(),
-  };
 }
 
 document.addEventListener("keydown", (evento) => {
@@ -800,24 +1068,10 @@ document.addEventListener("keyup", (evento) => {
   teclasPressionadas.delete(evento.code);
 });
 
+// Eventos dos botoes e controles da tela.
 interfaceUsuario.botaoIniciar.addEventListener("click", iniciar);
+interfaceUsuario.botaoTreinar.addEventListener("click", iniciarTreino);
 interfaceUsuario.botaoPausar.addEventListener("click", pausar);
-interfaceUsuario.botaoReiniciar.addEventListener("click", () => {
-  jogoRodando = false;
-  reiniciar();
-});
+interfaceUsuario.botaoReiniciar.addEventListener("click", reiniciar);
 interfaceUsuario.passosPorQuadro.addEventListener("input", atualizarInterface);
-
-window.DinoEnv = {
-  acao,
-  reiniciar,
-  passo,
-  obterEstado,
-  iniciar,
-  pausar,
-  definirAgente,
-  carregarCerebroNumpy,
-  rodarEpisodio,
-};
-
 reiniciar();

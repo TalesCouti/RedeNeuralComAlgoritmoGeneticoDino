@@ -37,7 +37,8 @@ input {
 
 .painel,
 .controles,
-.painel-dados {
+.painel-dados,
+.painel-grafico {
   display: grid;
   gap: 16px;
 }
@@ -72,12 +73,13 @@ h2 {
 
 .estatisticas {
   display: grid;
-  grid-template-columns: repeat(3, 112px);
+  grid-template-columns: repeat(3, 128px);
   gap: 8px;
 }
 
 .estatisticas div,
-.painel-dados > div {
+.painel-dados > div,
+.painel-grafico {
   border: 1px solid var(--linha);
   border-radius: 8px;
   background: var(--painel);
@@ -142,7 +144,7 @@ canvas {
 }
 
 .controles {
-  grid-template-columns: repeat(3, minmax(104px, auto)) minmax(160px, 1fr) minmax(240px, 1.2fr);
+  grid-template-columns: repeat(4, minmax(104px, auto)) minmax(160px, 1fr) minmax(240px, 1.2fr);
   align-items: center;
   margin: 16px 0;
 }
@@ -190,9 +192,23 @@ button:hover {
   grid-template-columns: 1fr 1fr;
 }
 
-.painel-dados > div {
+.painel-dados > div,
+.painel-grafico {
   min-width: 0;
   padding: 14px;
+}
+
+.painel-grafico {
+  margin-bottom: 16px;
+}
+
+#graficoPontuacao {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 12px;
+  border: 1px solid var(--linha);
+  border-radius: 8px;
 }
 
 pre {
@@ -210,7 +226,8 @@ pre {
 @media (max-width: 820px) {
   .painel,
   .painel-dados,
-  .controles {
+  .controles,
+  .painel-grafico {
     grid-template-columns: 1fr;
   }
 
