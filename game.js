@@ -36,6 +36,7 @@ const configuracao = {
   pistaY: 380,
   velocidadePulo: 6,
   decaimentoPulo: 0.1,
+  multiplicadorQuedaRapida: 7,
   escalaPulo: 1,
   velocidadeBase: 3,
   tamanhoPopulacao: 180,
@@ -274,6 +275,7 @@ function criarDino(indice, cerebro = null) {
     pontuacao: 0,
     aptidao: 0,
     bonusObstaculos: 0,
+    bonusChao: 0,
     obstaculosPassados: new Set(),
     x: configuracao.dinoX,
     y: configuracao.dinoCorrendoY,
@@ -529,7 +531,7 @@ function montarEntradasNumpy(estadoJogo) {
 
 function atualizarAptidao(dino) {
   const sobrevivencia = Math.pow(Math.max(1, dino.pontuacao), 1.08);
-  dino.aptidao = sobrevivencia + dino.bonusObstaculos;
+  dino.aptidao = sobrevivencia + dino.bonusObstaculos + dino.bonusChao;
 }
 
 // Executa a rede neural e escolhe a acao de maior valor.
@@ -592,7 +594,7 @@ function aplicarAcaoDino(dino, acaoRecebida) {
   if (dino.pulando) {
     dino.modo = "pulando";
     dino.y -= dino.velocidadePulo * configuracao.escalaPulo;
-    dino.velocidadePulo -= dino.quedaRapida ? configuracao.decaimentoPulo * 3.8 : configuracao.decaimentoPulo;
+    dino.velocidadePulo -= dino.quedaRapida ? configuracao.decaimentoPulo * configuracao.multiplicadorQuedaRapida : configuracao.decaimentoPulo;
 
     if (dino.velocidadePulo < -configuracao.velocidadePulo) {
       dino.pulando = false;
@@ -605,6 +607,7 @@ function aplicarAcaoDino(dino, acaoRecebida) {
   }
 
   aplicarTamanhoDino(dino);
+  if (dino.noChao) dino.bonusChao += 0.08;
   dino.pontuacao += 1;
   atualizarAptidao(dino);
 }
