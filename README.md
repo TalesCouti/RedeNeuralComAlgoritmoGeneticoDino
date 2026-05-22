@@ -1,24 +1,87 @@
-# Dino Runner IA
+# Dino Runner AG
 
-Jogo simples inspirado no dinossauro do Chrome, feito em HTML, CSS e JavaScript puro para testes com rede neural e algoritmo genetico.
+Jogo inspirado no dinossauro do Chrome, feito com HTML, CSS e JavaScript puro. O projeto usa uma rede neural simples com algoritmo genetico para treinar varios dinossauros ao mesmo tempo direto no navegador.
 
 ## Como abrir
 
-Abra `index.html` no navegador.
+Voce pode abrir `index.html` direto no navegador. Outra opcao e usar uma extensao como Live Server no VS Code e abrir a URL local que ela criar.
 
-Para carregar o cerebro treinado em Python (`cerebro_dino.json`), prefira abrir com servidor local:
+Se o navegador mostrar uma versao antiga do jogo, use `Ctrl + F5` ou altere a versao do script em `index.html`, por exemplo:
 
-```bash
-python -m http.server 8000
+```html
+<script src="game.js?v=14"></script>
 ```
 
-Depois acesse:
+## Controles
+
+- `Espaco`, `W` ou seta para cima: pular.
+- `S` ou seta para baixo: abaixar.
+- `S` ou seta para baixo no ar: cair mais rapido.
+- `P`: pausar.
+- `U`: iniciar/voltar.
+- `R`: reiniciar.
+
+## Obstaculos
+
+O jogo possui cactos, passaros e canos.
+
+O cano e desenhado pelo proprio canvas, sem depender de `Pipe.png`. Ele vem de cima e so pode ser desviado abaixando. Se o dino estiver em pe ou pulando, ele deve colidir com o cano.
+
+## Treino no navegador
+
+Clique em `Treinar` para iniciar a populacao de dinos controlados por redes neurais.
+
+Durante o treino:
+
+- cada dino recebe uma cor diferente;
+- dinos mortos somem da tela;
+- `Geracao` mostra a geracao atual;
+- `Vivos` mostra quantos dinos ainda estao vivos;
+- `Melhor geracao` mostra a melhor pontuacao da geracao atual;
+- o grafico `Pontuacao por geracao` acompanha a evolucao do melhor score;
+- quando todos morrem, o jogo cria uma nova geracao com elitismo, crossover e mutacao.
+
+## Rede neural e algoritmo genetico
+
+Valores principais atuais:
+
+- populacao: `100`
+- elite: `12`
+- taxa de mutacao: `0.08`
+- forca da mutacao: `0.12`
+- entradas da rede: `10`
+- neuronios ocultos: `48`
+- saidas: `3`
+
+As saidas da rede sao:
 
 ```text
-http://127.0.0.1:8000/index.html
+0 = nada
+1 = pular
+2 = abaixar
 ```
 
-Os sprites ficam em `Sprites/`, seguindo a estrutura do projeto Pygame:
+A acao `abaixar` tambem funciona no ar. Nesse caso, ativa a queda rapida usando `multiplicadorQuedaRapida`.
+
+## Aptidao
+
+A selecao dos melhores dinos usa `aptidao`, nao apenas a pontuacao visual.
+
+A aptidao considera:
+
+- sobrevivencia;
+- bonus por obstaculo ultrapassado;
+- uma pequena recompensa por estar no chao.
+
+Essa recompensa por estar no chao ajuda a reduzir pulos desnecessarios, mas e pequena para nao impedir a rede de aprender a pular quando precisa.
+
+## Grafico
+
+O grafico mostra a melhor pontuacao por geracao. Ele inclui grade, linha de evolucao, preenchimento suave e destaque para o ultimo ponto registrado.
+
+## Assets
+
+Os sprites usados ficam em `Sprites/`:
 
 - `Sprites/Dino/DinoStart.png`
 - `Sprites/Dino/DinoRun1.png` e `Sprites/Dino/DinoRun2.png`
@@ -28,108 +91,20 @@ Os sprites ficam em `Sprites/`, seguindo a estrutura do projeto Pygame:
 - `Sprites/Cactus/SmallCactus1.png` ate `SmallCactus3.png`
 - `Sprites/Cactus/LargeCactus1.png` ate `LargeCactus3.png`
 - `Sprites/Bird/Bird1.png` e `Sprites/Bird/Bird2.png`
-- `Sprites/Other/Cloud.png`, `Track.png` e `GameOver.png`
+- `Sprites/Other/Cloud.png`, `Track.png`, `GameOver.png` e `Reset.png`
 
-O jogo tambem tem um obstaculo desenhado no canvas: o `cano`, inspirado em Flappy Bird. Ele vem de cima e so pode ser desviado abaixando.
+## Observacoes
 
-## Controles
+O recorde de pontuacao e salvo no `localStorage` com a chave `dino-recorde`.
 
-- `Espaco`, `W` ou seta para cima: pular
-- `S` ou seta para baixo: abaixar
-- `R`: reiniciar
-
-## Treino integrado no site
-
-Clique em `Treinar` para iniciar uma populacao de dinossauros controlados por redes neurais simples em JavaScript. Cada dino recebe uma cor diferente para ficar facil acompanhar os individuos.
-
-Durante o treino:
-
-- `Geracao` mostra a geracao atual.
-- `Vivos` mostra quantos dinos ainda estao na tela.
-- `Melhor geracao` mostra o melhor score da geracao atual.
-- O grafico `Pontuacao por geracao` mostra o melhor score de cada geracao.
-- Quando um dino morre, ele some da tela.
-- Quando todos morrem, o jogo cria automaticamente a proxima geracao com elitismo, crossover e mutacao.
-- Se existir `cerebro_dino.json`, o treino usa esse cerebro do Python como ponto de partida e cria mutacoes dele. Isso costuma melhorar bem o desempenho inicial.
-- Se voce adicionar ou mudar obstaculos, treine novamente para a rede aprender os novos padroes. O `cano`, por exemplo, exige a acao `abaixar`.
-
-Use `Pausar` para parar temporariamente e `Reiniciar` para voltar ao modo normal com um unico dino.
-
-## API para IA
-
-O jogo expoe `window.DinoEnv` no navegador:
+Para limpar o recorde pelo console do navegador:
 
 ```js
-DinoEnv.reiniciar();
-DinoEnv.passo(0); // nada
-DinoEnv.passo(1); // pula
-DinoEnv.passo(2); // abaixa
-DinoEnv.obterEstado();
-DinoEnv.iniciarTreino();
+localStorage.removeItem("dino-recorde");
 ```
 
-## Treino com NumPy
-
-O arquivo `treinar_ia_numpy.py` treina uma rede neural simples usando NumPy e algoritmo genetico. Ele nao altera o jogo durante o treino; apenas gera o arquivo `cerebro_dino.json`.
-
-Instale o NumPy se ainda nao tiver:
-
-```bash
-pip install numpy
-```
-
-Depois rode:
-
-```bash
-python treinar_ia_numpy.py
-```
-
-Quando terminar, ele salva a melhor rede em:
-
-```text
-cerebro_dino.json
-```
-
-Para usar essa rede no jogo, abra o console do navegador e execute:
+Para limpar todo o `localStorage` deste site:
 
 ```js
-await DinoEnv.carregarCerebroNumpy("cerebro_dino.json");
-DinoEnv.iniciar();
+localStorage.clear();
 ```
-
-Isso carrega os pesos treinados no Python, transforma a rede em um agente JavaScript e marca automaticamente `Usar agente IA`.
-
-Tambem da para plugar um agente manualmente:
-
-```js
-DinoEnv.definirAgente((estado) => {
-  if (estado.distanciaObstaculo < 150 && estado.noChao) return 1;
-  return 0;
-});
-
-DinoEnv.iniciar();
-```
-
-Para avaliar um individuo sem depender da animacao:
-
-```js
-const resultado = DinoEnv.rodarEpisodio((estado) => {
-  if (estado.distanciaObstaculo !== null && estado.distanciaObstaculo < 145 && estado.noChao) return 1;
-  return 0;
-}, 5000);
-```
-
-O estado retornado tem dados pensados para uma rede neural:
-
-- `velocidade`
-- `dinoY`
-- `velocidadeVerticalDino`
-- `noChao`
-- `abaixado`
-- `distanciaObstaculo`
-- `larguraObstaculo`
-- `alturaObstaculo`
-- `obstaculoY`
-- `tipoObstaculo`
-
-O `passo(acao)` retorna `{ estado, recompensa, finalizado }`, o que facilita rodar treino manual ou automatizado.

@@ -16,6 +16,7 @@ const interfaceUsuario = {
   melhorGeracao: document.querySelector("#melhorGeracao"),
   sobreposicao: document.querySelector("#sobreposicao"),
   visualizacaoEstado: document.querySelector("#visualizacaoEstado"),
+  visualizacaoCerebro: document.querySelector("#visualizacaoCerebro"),
   botaoIniciar: document.querySelector("#botaoIniciar"),
   botaoTreinar: document.querySelector("#botaoTreinar"),
   botaoPausar: document.querySelector("#botaoPausar"),
@@ -39,7 +40,7 @@ const configuracao = {
   multiplicadorQuedaRapida: 7,
   escalaPulo: 1,
   velocidadeBase: 3,
-  tamanhoPopulacao: 180,
+  tamanhoPopulacao: 100,
   quantidadeElite: 12,
   taxaMutacao: 0.08,
   forcaMutacao: 0.12,
@@ -121,9 +122,9 @@ let recorde = Number(localStorage.getItem("dino-recorde") || 0);
 let melhorPontuacaoGeracao = 0;
 let melhorCerebroHistorico = null;
 let melhorAptidaoHistorica = 0;
-let cerebroBaseTreino = null;
 let historicoGeracoes = [];
 let proximoIdObstaculo = 1;
+let assinaturaCerebroRenderizado = "";
 
 // Carrega uma imagem e guarda se ela ja esta pronta para ser desenhada.
 function carregarImagem(caminho) {
@@ -292,27 +293,13 @@ function criarDino(indice, cerebro = null) {
   };
 }
 
-// Cria a populacao inicial.
-// Se existir um cerebro treinado pelo Python, a populacao nasce a partir dele e de mutacoes.
+// Cria a populacao inicial com cerebros aleatorios e, quando existir,
+// reinsere o melhor cerebro ja encontrado pelo treino no navegador.
 function criarPopulacao(tamanho = configuracao.tamanhoPopulacao) {
-  if (cerebroBaseTreino) {
-    const populacao = Array.from({ length: tamanho }, (_, indice) => {
-      const cerebro = clonarCerebro(cerebroBaseTreino);
-      if (indice > 0) mutarCerebro(cerebro, 0.45 + (indice % 12) * 0.08);
-      return criarDino(indice, cerebro);
-    });
-
-    if (melhorCerebroHistorico) {
-      populacao[1] = criarDino(1, clonarCerebro(melhorCerebroHistorico));
-    }
-
-    return populacao;
-  }
-
   const populacao = Array.from({ length: tamanho }, (_, indice) => criarDino(indice));
 
   if (melhorCerebroHistorico) {
-    populacao[1] = criarDino(1, clonarCerebro(melhorCerebroHistorico));
+    populacao[0] = criarDino(0, clonarCerebro(melhorCerebroHistorico));
   }
 
   return populacao;
@@ -370,30 +357,14 @@ function reiniciar() {
   criarMundo([criarDino(0, agenteIa ? null : criarCerebroAleatorio())]);
   interfaceUsuario.sobreposicao.hidden = false;
   interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Dino pronto";
+  interfaceUsuario.botaoPausar.textContent = "Pausar";
   atualizarInterface();
   desenhar();
   return obterEstado();
 }
 
-// Tenta carregar o cerebro salvo pelo Python para melhorar o ponto de partida do treino no navegador.
-async function tentarCarregarCerebroBase() {
-  if (cerebroBaseTreino) return cerebroBaseTreino;
-
-  try {
-    const resposta = await fetch("cerebro_dino.json", { cache: "no-store" });
-    if (!resposta.ok) return null;
-    cerebroBaseTreino = await resposta.json();
-    melhorCerebroHistorico = clonarCerebro(cerebroBaseTreino);
-    melhorAptidaoHistorica = Number(cerebroBaseTreino.pontuacao || 0);
-    return cerebroBaseTreino;
-  } catch (_erro) {
-    return null;
-  }
-}
-
 // Inicia o treino visual no navegador com varios dinos coloridos.
-async function iniciarTreino() {
-  await tentarCarregarCerebroBase();
+function iniciarTreino() {
   modoTreino = true;
   jogoRodando = true;
   ultimoQuadro = 0;
@@ -402,6 +373,7 @@ async function iniciarTreino() {
   criarMundo(criarPopulacao());
   marcarIaAtivada(true);
   interfaceUsuario.sobreposicao.hidden = true;
+  interfaceUsuario.botaoPausar.textContent = "Pausar";
   desenharGrafico();
   requestAnimationFrame(quadro);
 }
@@ -510,8 +482,8 @@ function obterEstado(dino = obterDinoPrincipal()) {
   };
 }
 
-// Normaliza os dados do jogo para a mesma escala usada no treino Python.
-function montarEntradasNumpy(estadoJogo) {
+// Normaliza os dados do jogo para alimentar a rede neural no navegador.
+function montarEntradasRede(estadoJogo) {
   const distancia = estadoJogo.distanciaObstaculo === null ? 600 : limitar(estadoJogo.distanciaObstaculo, 0, 600);
   const velocidadeVerticalNormalizada = limitar((estadoJogo.velocidadeVerticalDino + configuracao.velocidadePulo) / (configuracao.velocidadePulo * 2), 0, 1);
 
@@ -534,9 +506,88 @@ function atualizarAptidao(dino) {
   dino.aptidao = sobrevivencia + dino.bonusObstaculos + dino.bonusChao;
 }
 
+function arredondarPeso(valor) {
+  return Number(valor.toFixed(3));
+}
+
+function arredondarVetor(vetor = []) {
+  return vetor.map(arredondarPeso);
+}
+
+function arredondarMatriz(matriz = []) {
+  return matriz.map(arredondarVetor);
+}
+
+function formatarPeso(valor) {
+  return Number(valor).toFixed(3);
+}
+
+function criarTabelaVetor(titulo, vetor = []) {
+  const cabecalho = vetor.map((_, indice) => `<th>C${indice}</th>`).join("");
+  const celulas = vetor.map((valor) => `<td>${formatarPeso(valor)}</td>`).join("");
+  return `
+    <section class="bloco-matriz">
+      <h3>${titulo}</h3>
+      <div class="tabela-matriz-rolagem">
+        <table class="tabela-matriz">
+          <thead><tr><th></th>${cabecalho}</tr></thead>
+          <tbody><tr><th>V0</th>${celulas}</tr></tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function criarTabelaMatriz(titulo, matriz = []) {
+  const quantidadeColunas = matriz[0] ? matriz[0].length : 0;
+  const cabecalho = Array.from({ length: quantidadeColunas }, (_, indice) => `<th>C${indice}</th>`).join("");
+  const linhas = matriz
+    .map((linha, linhaIndice) => `<tr><th>L${linhaIndice}</th>${linha.map((valor) => `<td>${formatarPeso(valor)}</td>`).join("")}</tr>`)
+    .join("");
+
+  return `
+    <section class="bloco-matriz">
+      <h3>${titulo}</h3>
+      <div class="tabela-matriz-rolagem">
+        <table class="tabela-matriz">
+          <thead><tr><th></th>${cabecalho}</tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderizarMelhorCerebro() {
+  if (!interfaceUsuario.visualizacaoCerebro) return;
+
+  if (!melhorCerebroHistorico) {
+    interfaceUsuario.visualizacaoCerebro.textContent = "Treine para gerar um melhor dino.";
+    assinaturaCerebroRenderizado = "";
+    return;
+  }
+
+  const assinaturaAtual = `${melhorAptidaoHistorica}|${JSON.stringify(melhorCerebroHistorico)}`;
+  if (assinaturaAtual === assinaturaCerebroRenderizado) return;
+  assinaturaCerebroRenderizado = assinaturaAtual;
+
+  interfaceUsuario.visualizacaoCerebro.innerHTML = `
+    <div class="resumo-cerebro">
+      <span>Aptidao: <strong>${melhorAptidaoHistorica.toFixed(2)}</strong></span>
+      <span>Entradas: <strong>${melhorCerebroHistorico.quantidadeEntradas}</strong></span>
+      <span>Ocultos: <strong>${melhorCerebroHistorico.quantidadeNeuroniosOcultos}</strong></span>
+      <span>Saidas: <strong>${melhorCerebroHistorico.quantidadeSaidas}</strong></span>
+    </div>
+    ${criarTabelaMatriz("Pesos: entrada -> oculta", arredondarMatriz(melhorCerebroHistorico.pesosEntradaOculta))}
+    ${criarTabelaVetor("Bias da camada oculta", arredondarVetor(melhorCerebroHistorico.biasOculta))}
+    ${criarTabelaMatriz("Pesos: oculta -> saida", arredondarMatriz(melhorCerebroHistorico.pesosOcultaSaida))}
+    ${criarTabelaVetor("Bias da saida", arredondarVetor(melhorCerebroHistorico.biasSaida))}
+  `;
+}
+
 // Executa a rede neural e escolhe a acao de maior valor.
 function preverAcao(cerebro, estadoJogo) {
-  const entradas = montarEntradasNumpy(estadoJogo);
+  const entradas = montarEntradasRede(estadoJogo);
   const camadaOcultaBruta = somarVetores(produtoVetorMatriz(entradas, cerebro.pesosEntradaOculta), cerebro.biasOculta);
   const camadaOculta = camadaOcultaBruta.map(relu);
   const saida = somarVetores(produtoVetorMatriz(camadaOculta, cerebro.pesosOcultaSaida), cerebro.biasSaida);
@@ -964,7 +1015,12 @@ function desenhar() {
 function desenharGrafico() {
   const largura = telaGrafico.width;
   const altura = telaGrafico.height;
-  const margem = 34;
+  const margemEsquerda = 54;
+  const margemDireita = 24;
+  const margemTopo = 28;
+  const margemBaixo = 42;
+  const larguraUtil = largura - margemEsquerda - margemDireita;
+  const alturaUtil = altura - margemTopo - margemBaixo;
   const pontos = [...historicoGeracoes];
 
   if (modoTreino) {
@@ -972,34 +1028,74 @@ function desenharGrafico() {
   }
 
   contextoGrafico.clearRect(0, 0, largura, altura);
-  contextoGrafico.fillStyle = "#ffffff";
+  contextoGrafico.fillStyle = "#fbfcfb";
   contextoGrafico.fillRect(0, 0, largura, altura);
+  contextoGrafico.lineJoin = "round";
+  contextoGrafico.lineCap = "round";
 
-  contextoGrafico.strokeStyle = "#c9d2ca";
+  contextoGrafico.strokeStyle = "#e3e8e4";
   contextoGrafico.lineWidth = 1;
-  contextoGrafico.beginPath();
-  contextoGrafico.moveTo(margem, 12);
-  contextoGrafico.lineTo(margem, altura - margem);
-  contextoGrafico.lineTo(largura - 12, altura - margem);
-  contextoGrafico.stroke();
+
+  for (let i = 0; i <= 4; i += 1) {
+    const y = margemTopo + (i / 4) * alturaUtil;
+    contextoGrafico.beginPath();
+    contextoGrafico.moveTo(margemEsquerda, y);
+    contextoGrafico.lineTo(largura - margemDireita, y);
+    contextoGrafico.stroke();
+  }
 
   contextoGrafico.fillStyle = "#6c746e";
-  contextoGrafico.font = "12px system-ui";
-  contextoGrafico.fillText("pontuacao", 8, 20);
-  contextoGrafico.fillText("geracao", largura - 72, altura - 10);
+  contextoGrafico.font = "600 12px system-ui";
+  contextoGrafico.fillText("pontuacao", 12, 18);
+  contextoGrafico.fillText("geracao", largura - 84, altura - 14);
+
+  contextoGrafico.strokeStyle = "#9aa59d";
+  contextoGrafico.beginPath();
+  contextoGrafico.moveTo(margemEsquerda, margemTopo);
+  contextoGrafico.lineTo(margemEsquerda, altura - margemBaixo);
+  contextoGrafico.lineTo(largura - margemDireita, altura - margemBaixo);
+  contextoGrafico.stroke();
 
   if (pontos.length === 0) {
-    contextoGrafico.fillText("Inicie o treinamento.", margem + 16, altura / 2);
+    contextoGrafico.fillStyle = "#879189";
+    contextoGrafico.font = "600 15px system-ui";
+    contextoGrafico.fillText("Inicie o treinamento para ver a evolucao.", margemEsquerda + 18, altura / 2);
     return;
   }
 
   const maiorPontuacao = Math.max(1, ...pontos.map((ponto) => ponto.pontuacao));
+  const menorPontuacao = Math.min(...pontos.map((ponto) => ponto.pontuacao));
   const intervalo = Math.max(1, pontos.length - 1);
-  const xDoPonto = (indice) => margem + (indice / intervalo) * (largura - margem - 18);
-  const yDoPonto = (pontuacao) => altura - margem - (pontuacao / maiorPontuacao) * (altura - margem - 22);
+  const xDoPonto = (indice) => margemEsquerda + (indice / intervalo) * larguraUtil;
+  const yDoPonto = (pontuacao) => altura - margemBaixo - (pontuacao / maiorPontuacao) * alturaUtil;
+  const ultimoPonto = pontos[pontos.length - 1];
+  const ultimoX = xDoPonto(pontos.length - 1);
+  const ultimoY = yDoPonto(ultimoPonto.pontuacao);
+
+  contextoGrafico.fillStyle = "#879189";
+  contextoGrafico.font = "12px system-ui";
+  contextoGrafico.fillText(String(maiorPontuacao), 12, yDoPonto(maiorPontuacao) + 4);
+  contextoGrafico.fillText(String(menorPontuacao), 12, Math.min(altura - margemBaixo, yDoPonto(menorPontuacao)) + 4);
+
+  contextoGrafico.beginPath();
+  pontos.forEach((ponto, indice) => {
+    const x = xDoPonto(indice);
+    const y = yDoPonto(ponto.pontuacao);
+    if (indice === 0) contextoGrafico.moveTo(x, y);
+    else contextoGrafico.lineTo(x, y);
+  });
+  contextoGrafico.lineTo(ultimoX, altura - margemBaixo);
+  contextoGrafico.lineTo(xDoPonto(0), altura - margemBaixo);
+  contextoGrafico.closePath();
+
+  const preenchimento = contextoGrafico.createLinearGradient(0, margemTopo, 0, altura - margemBaixo);
+  preenchimento.addColorStop(0, "rgba(29, 127, 104, 0.22)");
+  preenchimento.addColorStop(1, "rgba(29, 127, 104, 0.02)");
+  contextoGrafico.fillStyle = preenchimento;
+  contextoGrafico.fill();
 
   contextoGrafico.strokeStyle = "#1d7f68";
-  contextoGrafico.lineWidth = 3;
+  contextoGrafico.lineWidth = 4;
   contextoGrafico.beginPath();
   pontos.forEach((ponto, indice) => {
     const x = xDoPonto(indice);
@@ -1009,15 +1105,22 @@ function desenharGrafico() {
   });
   contextoGrafico.stroke();
 
-  contextoGrafico.fillStyle = "#105948";
   pontos.forEach((ponto, indice) => {
     const x = xDoPonto(indice);
     const y = yDoPonto(ponto.pontuacao);
+    const ehUltimo = indice === pontos.length - 1;
+    contextoGrafico.fillStyle = ehUltimo ? "#ffffff" : "#1d7f68";
+    contextoGrafico.strokeStyle = ehUltimo ? "#105948" : "#ffffff";
+    contextoGrafico.lineWidth = ehUltimo ? 4 : 2;
     contextoGrafico.beginPath();
-    contextoGrafico.arc(x, y, 4, 0, Math.PI * 2);
+    contextoGrafico.arc(x, y, ehUltimo ? 6 : 4, 0, Math.PI * 2);
     contextoGrafico.fill();
-    if (indice === pontos.length - 1) contextoGrafico.fillText(String(ponto.pontuacao), x - 6, y - 10);
+    contextoGrafico.stroke();
   });
+
+  contextoGrafico.fillStyle = "#105948";
+  contextoGrafico.font = "700 13px system-ui";
+  contextoGrafico.fillText(`G${ultimoPonto.geracao}: ${ultimoPonto.pontuacao}`, Math.min(ultimoX + 10, largura - 112), Math.max(18, ultimoY - 12));
 }
 
 // Atualiza textos do HUD, painel JSON e grafico.
@@ -1031,6 +1134,7 @@ function atualizarInterface() {
   interfaceUsuario.melhorGeracao.textContent = String(Math.floor(melhorPontuacaoGeracao));
   interfaceUsuario.valorPassosPorQuadro.textContent = interfaceUsuario.passosPorQuadro.value;
   interfaceUsuario.visualizacaoEstado.textContent = JSON.stringify(obterEstado(), null, 2);
+  renderizarMelhorCerebro();
   desenharGrafico();
 }
 
@@ -1055,21 +1159,41 @@ function iniciar() {
   if (jogoRodando) return;
   jogoRodando = true;
   interfaceUsuario.sobreposicao.hidden = true;
+  interfaceUsuario.botaoPausar.textContent = "Pausar";
   requestAnimationFrame(quadro);
 }
 
 // Pausa o jogo/treino sem resetar o estado atual.
 function pausar() {
+  if (!jogoRodando) return;
   jogoRodando = false;
   interfaceUsuario.sobreposicao.hidden = false;
   interfaceUsuario.sobreposicao.querySelector("strong").textContent = "Pausado";
+  interfaceUsuario.botaoPausar.textContent = "Despausar";
+}
+
+function despausar() {
+  if (jogoRodando) return;
+  jogoRodando = true;
+  ultimoQuadro = 0;
+  interfaceUsuario.sobreposicao.hidden = true;
+  interfaceUsuario.botaoPausar.textContent = "Pausar";
+  requestAnimationFrame(quadro);
+}
+
+function alternarPausa() {
+  if (jogoRodando) {
+    pausar();
+  } else {
+    despausar();
+  }
 }
 
 document.addEventListener("keydown", (evento) => {
   teclasPressionadas.add(evento.code);
   if (evento.code === "Space") evento.preventDefault();
   if (evento.code === "KeyR") reiniciar();
-  if (evento.code === "KeyP") pausar();
+  if (evento.code === "KeyP") alternarPausa();
   if (evento.code === "KeyU") iniciar();
 });
 
@@ -1080,7 +1204,7 @@ document.addEventListener("keyup", (evento) => {
 // Eventos dos botoes e controles da tela.
 interfaceUsuario.botaoIniciar.addEventListener("click", iniciar);
 interfaceUsuario.botaoTreinar.addEventListener("click", iniciarTreino);
-interfaceUsuario.botaoPausar.addEventListener("click", pausar);
+interfaceUsuario.botaoPausar.addEventListener("click", alternarPausa);
 interfaceUsuario.botaoReiniciar.addEventListener("click", reiniciar);
 interfaceUsuario.passosPorQuadro.addEventListener("input", atualizarInterface);
 reiniciar();

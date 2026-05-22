@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dino Runner IA</title>
+    <title>Dino Game AG</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -11,7 +11,7 @@
       <section class="painel" aria-label="Painel do jogo">
         <div>
           <p class="rotulo">Projeto de algoritmo genetico</p>
-          <h1>Dino Runner AG</h1>
+          <h1>Dino Game AG</h1>
         </div>
 
         <div class="estatisticas">
@@ -73,15 +73,12 @@
           <pre id="visualizacaoEstado">{}</pre>
         </div>
         <div>
-          <h2>API rapida</h2>
-          <pre>window.DinoEnv.reiniciar()
-window.DinoEnv.passo(1) // 0 nada, 1 pula, 2 abaixa
-window.DinoEnv.obterEstado()
-window.DinoEnv.iniciarTreino()</pre>
+          <h2>Matriz do melhor dino</h2>
+          <div id="visualizacaoCerebro" class="visualizacao-cerebro">Treine para gerar um melhor dino.</div>
         </div>
       </section>
     </main>
 
-    <script src="game.js?v=11"></script>
+    <script src="game.js?v=14"></script>
   </body>
 </html>

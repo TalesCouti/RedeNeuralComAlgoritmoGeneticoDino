@@ -214,6 +214,7 @@ button:hover {
 pre {
   overflow: auto;
   min-height: 132px;
+  max-height: 420px;
   margin: 12px 0 0;
   padding: 12px;
   border-radius: 8px;
@@ -221,6 +222,85 @@ pre {
   color: #e9fff6;
   font-size: 0.84rem;
   line-height: 1.45;
+}
+
+.visualizacao-cerebro {
+  max-height: 420px;
+  margin-top: 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #101513;
+  color: #e9fff6;
+}
+
+.resumo-cerebro {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(233, 255, 246, 0.14);
+  background: #101513;
+  font-size: 0.82rem;
+}
+
+.resumo-cerebro span {
+  padding: 4px 8px;
+  border: 1px solid rgba(233, 255, 246, 0.14);
+  border-radius: 999px;
+  background: rgba(233, 255, 246, 0.06);
+}
+
+.bloco-matriz {
+  padding: 10px;
+}
+
+.bloco-matriz h3 {
+  margin: 0 0 8px;
+  color: #e9fff6;
+  font-size: 0.86rem;
+}
+
+.tabela-matriz-rolagem {
+  overflow: auto;
+  border: 1px solid rgba(233, 255, 246, 0.14);
+  border-radius: 8px;
+}
+
+.tabela-matriz {
+  border-collapse: collapse;
+  min-width: max-content;
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
+}
+
+.tabela-matriz th,
+.tabela-matriz td {
+  padding: 5px 7px;
+  border: 1px solid rgba(233, 255, 246, 0.12);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.tabela-matriz th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #18221e;
+  color: #b8d9cc;
+  font-weight: 800;
+}
+
+.tabela-matriz tbody th {
+  left: 0;
+  z-index: 1;
+}
+
+.tabela-matriz td {
+  color: #e9fff6;
 }
 
 @media (max-width: 820px) {
