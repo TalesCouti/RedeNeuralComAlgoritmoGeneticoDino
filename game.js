@@ -36,7 +36,7 @@ const configuracao = {
   dinoAbaixadoY: 340,
   pistaY: 380,
   velocidadePulo: 6,
-  decaimentoPulo: 0.1,
+  decaimentoPulo: 0.07,
   multiplicadorQuedaRapida: 7,
   escalaPulo: 1,
   velocidadeBase: 3,
@@ -72,7 +72,6 @@ const coresDinos = [
   "#84cc16",
 ];
 
-// Caminhos dos sprites originais. Os arquivos PNG nao sao alterados pelo codigo.
 const fontesAssets = {
   dino: {
     parado: "Sprites/Dino/DinoStart.png",
@@ -468,7 +467,7 @@ function obterEstado(dino = obterDinoPrincipal()) {
     pontuacao: Math.floor(dino ? dino.pontuacao : 0),
     melhorGeracao: Math.floor(melhorPontuacaoGeracao),
     velocidade: Number(estado.velocidade.toFixed(2)),
-    dinoY: Number((configuracao.dinoCorrendoY - (dino ? dino.y : configuracao.dinoCorrendoY)).toFixed(2)),
+    dinoAltura: Number((configuracao.dinoCorrendoY - (dino ? dino.y : configuracao.dinoCorrendoY)).toFixed(2)),
     velocidadeVerticalDino: Number((dino ? dino.velocidadePulo : configuracao.velocidadePulo).toFixed(2)),
     noChao: dino ? dino.noChao : true,
     abaixado: dino ? dino.abaixado : false,
@@ -493,7 +492,7 @@ function montarEntradasRede(estadoJogo) {
     limitar(estadoJogo.alturaObstaculo / configuracao.altura, 0, 1),
     limitar(estadoJogo.obstaculoY / configuracao.pistaY, 0, 1),
     limitar(estadoJogo.velocidade / 8, 0, 1),
-    limitar(estadoJogo.dinoY / 180, 0, 1),
+    limitar(estadoJogo.dinoAltura / 180, 0, 1),
     velocidadeVerticalNormalizada,
     estadoJogo.noChao ? 1 : 0,
     estadoJogo.abaixado ? 1 : 0,

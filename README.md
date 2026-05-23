@@ -100,11 +100,5 @@ O recorde de pontuacao e salvo no `localStorage` com a chave `dino-recorde`.
 Para limpar o recorde pelo console do navegador:
 
 ```js
-localStorage.removeItem("dino-recorde");
-```
-
-Para limpar todo o `localStorage` deste site:
-
-```js
 localStorage.clear();
 ```
